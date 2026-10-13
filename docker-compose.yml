@@ -1,0 +1,81 @@
+version: '3.8'
+
+services:
+  # Authoritative Distributed Database (Single-Node Replica Set for Multi-Document Transactions)
+  mongo:
+    image: mongo:7.0
+    container_name: airline_mongo
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  # One-time initialization service to configure replica set rs0 and seed PK123 / Seat 12A
+  mongo-init:
+    build: .
+    container_name: airline_mongo_init
+    command: ["node", "scripts/init-replica-set.js"]
+    environment:
+      - MONGO_HOST=mongo:27017
+      - REPLSET_NAME=rs0
+    depends_on:
+      mongo:
+        condition: service_healthy
+
+  # Airport Booking Office Node A
+  node-a:
+    build: .
+    container_name: airline_node_a
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ID=NODE_A
+      - PORT=3001
+      - MONGO_URI=mongodb://mongo:27017/airline_inventory?replicaSet=rs0
+      - NODE_ENV=production
+    depends_on:
+      mongo-init:
+        condition: service_completed_successfully
+    restart: on-failure
+
+  # Airport Booking Office Node B
+  node-b:
+    build: .
+    container_name: airline_node_b
+    ports:
+      - "3002:3002"
+    environment:
+      - NODE_ID=NODE_B
+      - PORT=3002
+      - MONGO_URI=mongodb://mongo:27017/airline_inventory?replicaSet=rs0
+      - NODE_ENV=production
+    depends_on:
+      mongo-init:
+        condition: service_completed_successfully
+    restart: on-failure
+
+  # Airport Booking Office Node C
+  node-c:
+    build: .
+    container_name: airline_node_c
+    ports:
+      - "3003:3003"
+    environment:
+      - NODE_ID=NODE_C
+      - PORT=3003
+      - MONGO_URI=mongodb://mongo:27017/airline_inventory?replicaSet=rs0
+      - NODE_ENV=production
+    depends_on:
+      mongo-init:
+        condition: service_completed_successfully
+    restart: on-failure
+
+volumes:
+  mongo_data:
