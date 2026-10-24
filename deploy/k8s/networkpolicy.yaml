@@ -1,0 +1,116 @@
+# Network boundaries for the airline namespace.
+#
+# Ingress is default-deny: only the ingress controller reaches the API, only the
+# monitoring namespace reaches the metrics ports, and nothing else talks to a pod unless
+# a rule below says so. Egress is deliberately left unrestricted — a default-deny egress
+# policy would also have to name the managed Citus coordinator, the read database, Redis,
+# DNS and the container registry, and getting that list wrong turns a security win into
+# a total outage. Add egress rules once the datastore endpoints are fixed (see the
+# commented example).
+#
+# These policies only take effect on clusters whose CNI enforces NetworkPolicy
+# (Calico, Cilium, Azure CNI, ...). Kind's default CNI does not, so verify with
+# `kubectl get networkpolicy` and a deliberate connection test rather than assuming.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: airline
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-api-ingress
+  namespace: airline
+spec:
+  podSelector:
+    matchLabels:
+      app: airline-api
+  policyTypes:
+    - Ingress
+  ingress:
+    # Replace `ingress-nginx` with the namespace of the actual controller.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 3000
+    # Prometheus in a separate monitoring namespace.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - protocol: TCP
+          port: 3000
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-worker-metrics-ingress
+  namespace: airline
+spec:
+  podSelector:
+    matchLabels:
+      app: airline-workers
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - protocol: TCP
+          port: 9464
+---
+# The migration Job may need to be reached by nothing; this policy documents that it
+# still gets DNS and (unrestricted) egress, and no ingress. It exists mainly so a future
+# egress policy has an object to attach to.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: deny-migrate-ingress
+  namespace: airline
+spec:
+  podSelector:
+    matchLabels:
+      app: airline-migrate
+  policyTypes:
+    - Ingress
+  ingress: []
+# --- Example of a locked-down egress rule, once datastore IPs/CIDRs are known ------
+# apiVersion: networking.k8s.io/v1
+# kind: NetworkPolicy
+# metadata:
+#   name: api-egress
+#   namespace: airline
+# spec:
+#   podSelector:
+#     matchLabels:
+#       app: airline-api
+#   policyTypes: [Egress]
+#   egress:
+#     - to:
+#         - namespaceSelector:
+#             matchLabels:
+#               kubernetes.io/metadata.name: kube-system
+#       ports:
+#         - protocol: UDP
+#           port: 53
+#         - protocol: TCP
+#           port: 53
+#     - to:
+#         - ipBlock:
+#             cidr: 10.0.0.0/8
+#       ports:
+#         - protocol: TCP
+#           port: 5432
+#         - protocol: TCP
+#           port: 6379

@@ -1,0 +1,1673 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Distributed Airline Inventory</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+</head>
+<body>
+<style>
+/* ============================================================
+   Design plan
+   Palette: cool paper + ink, deep aviation teal accent,
+            amber for holds/warnings, green for proof/read side.
+   Type: Archivo (display/UI), Source Serif 4 (running text),
+         IBM Plex Mono (schema, code, labels).
+   Layout: fixed contents rail + 820px document column.
+   ============================================================ */
+:root {
+  --paper: #f5f7f5;
+  --surface: #ffffff;
+  --surface-2: #ecf0ec;
+  --ink: #111a1e;
+  --ink-2: #3c4a4f;
+  --muted: #67757a;
+  --rule: #d5ddd8;
+  --rule-strong: #b4c1bb;
+  --accent: #0a5068;
+  --accent-soft: #e0eef2;
+  --amber: #9c5d08;
+  --amber-soft: #f6ead9;
+  --green: #156a52;
+  --green-soft: #dfefe9;
+  --red: #9c3a31;
+  --red-soft: #f5e2df;
+  --code-bg: #10191d;
+  --code-fg: #e4ece8;
+  --code-comment: #82968f;
+  --code-key: #8fd1e6;
+  --code-str: #dcb678;
+  --code-num: #e7a69e;
+  --code-inline: #e9eeea;
+  --shadow: 0 1px 2px rgba(17, 26, 30, 0.05);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #0b1114;
+    --surface: #121b1f;
+    --surface-2: #172228;
+    --ink: #e7ecea;
+    --ink-2: #c0cac7;
+    --muted: #8b9b9d;
+    --rule: #253339;
+    --rule-strong: #3a4c52;
+    --accent: #66b6d0;
+    --accent-soft: #102f39;
+    --amber: #e2a75c;
+    --amber-soft: #33271a;
+    --green: #61c1a1;
+    --green-soft: #112d26;
+    --red: #e08a7f;
+    --red-soft: #321b19;
+    --code-bg: #080e11;
+    --code-fg: #e4ece8;
+    --code-comment: #7f938c;
+    --code-key: #8fd1e6;
+    --code-str: #dcb678;
+    --code-num: #e7a69e;
+    --code-inline: #1c282d;
+    --shadow: none;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #0b1114;
+  --surface: #121b1f;
+  --surface-2: #172228;
+  --ink: #e7ecea;
+  --ink-2: #c0cac7;
+  --muted: #8b9b9d;
+  --rule: #253339;
+  --rule-strong: #3a4c52;
+  --accent: #66b6d0;
+  --accent-soft: #102f39;
+  --amber: #e2a75c;
+  --amber-soft: #33271a;
+  --green: #61c1a1;
+  --green-soft: #112d26;
+  --red: #e08a7f;
+  --red-soft: #321b19;
+  --code-bg: #080e11;
+  --code-fg: #e4ece8;
+  --code-comment: #7f938c;
+  --code-key: #8fd1e6;
+  --code-str: #dcb678;
+  --code-num: #e7a69e;
+  --code-inline: #1c282d;
+  --shadow: none;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: "Source Serif 4", Georgia, "Times New Roman", serif;
+  font-size: 17px;
+  line-height: 1.62;
+  padding-left: max(20px, env(safe-area-inset-left, 0px));
+  padding-right: max(20px, env(safe-area-inset-right, 0px));
+  padding-block: 0 96px;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+a:hover { text-decoration-thickness: 2px; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.page {
+  display: grid;
+  grid-template-columns: 238px minmax(0, 1fr);
+  gap: 56px;
+  max-width: 1180px;
+  margin: 0 auto;
+}
+main { min-width: 0; max-width: 830px; }
+.sidebar {
+  position: sticky;
+  top: 26px;
+  align-self: start;
+  padding-top: 58px;
+  font-family: "Archivo", "Segoe UI", sans-serif;
+}
+.brand { display: flex; align-items: center; gap: 10px; margin-bottom: 26px; }
+.brand-mark {
+  width: 34px; height: 34px;
+  border: 1px solid var(--rule-strong);
+  display: grid; place-items: center;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10px; letter-spacing: 0.04em; color: var(--accent);
+  background: var(--surface);
+}
+.brand-text { font-size: 12px; line-height: 1.3; color: var(--ink-2); }
+.brand-text strong { display: block; font-weight: 600; font-size: 12.5px; color: var(--ink); }
+.toc-label {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.16em;
+  color: var(--muted); margin: 0 0 10px; padding-left: 12px;
+}
+.toc { display: flex; flex-direction: column; gap: 1px; }
+.toc a {
+  display: flex; gap: 10px; align-items: baseline;
+  padding: 5px 0 5px 12px;
+  border-left: 1px solid var(--rule);
+  color: var(--ink-2); text-decoration: none;
+  font-size: 12.5px; line-height: 1.35;
+}
+.toc a:hover { color: var(--accent); border-left-color: var(--accent); }
+.toc .n {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 9.5px; color: var(--muted); min-width: 18px;
+}
+.side-meta {
+  margin-top: 28px; padding-left: 12px;
+  border-left: 1px solid var(--rule);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10px; line-height: 1.7; color: var(--muted);
+}
+.side-meta b { color: var(--ink-2); font-weight: 500; }
+
+/* ---------- cover ---------- */
+.cover { padding-top: 58px; }
+.eyebrow {
+  font-family: "Archivo", sans-serif;
+  font-size: 11px; font-weight: 600; letter-spacing: 0.16em;
+  text-transform: uppercase; color: var(--accent);
+  display: flex; align-items: center; gap: 10px;
+}
+.eyebrow::after { content: ""; flex: 1; height: 1px; background: var(--rule); }
+h1 {
+  font-family: "Archivo", "Segoe UI", sans-serif;
+  font-size: clamp(38px, 5.6vw, 62px);
+  line-height: 1.01;
+  font-weight: 650;
+  letter-spacing: -0.028em;
+  margin: 20px 0 18px;
+  text-wrap: balance;
+  max-width: 15ch;
+}
+.deck {
+  font-size: 20.5px; line-height: 1.45; color: var(--ink-2);
+  max-width: 44ch; margin: 0 0 22px;
+}
+.chips { display: flex; flex-wrap: wrap; gap: 7px; }
+.chip {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10.5px; color: var(--ink-2);
+  border: 1px solid var(--rule);
+  background: var(--surface);
+  padding: 4px 8px; border-radius: 4px;
+  white-space: nowrap;
+}
+.stats {
+  display: grid; grid-template-columns: repeat(5, minmax(0, 1fr));
+  border-top: 1px solid var(--rule-strong);
+  border-bottom: 1px solid var(--rule);
+  margin: 34px 0 6px;
+}
+.stat { padding: 16px 12px 15px 0; border-right: 1px solid var(--rule); min-width: 0; }
+.stat:last-child { border-right: none; }
+.stat .v {
+  font-family: "Archivo", sans-serif; font-weight: 600;
+  font-size: 24px; line-height: 1.1; letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.stat .l {
+  margin-top: 5px; font-family: "Archivo", sans-serif;
+  font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.1em;
+  color: var(--muted); line-height: 1.35;
+}
+
+/* ---------- sections ---------- */
+section { padding-top: 64px; scroll-margin-top: 22px; }
+.sec-head {
+  display: flex; align-items: baseline; gap: 14px;
+  border-top: 1px solid var(--rule-strong);
+  padding-top: 15px; margin-bottom: 20px;
+}
+.sec-num {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 11px; color: var(--accent); letter-spacing: 0.06em;
+  flex-shrink: 0;
+}
+h2 {
+  font-family: "Archivo", sans-serif;
+  font-size: clamp(25px, 3.4vw, 31px);
+  font-weight: 600; letter-spacing: -0.022em; line-height: 1.14;
+  margin: 0; text-wrap: balance;
+}
+h3 {
+  font-family: "Archivo", sans-serif;
+  font-size: 19px; font-weight: 600; letter-spacing: -0.01em;
+  line-height: 1.3; margin: 38px 0 10px;
+}
+h4 {
+  font-family: "Archivo", sans-serif;
+  font-size: 13px; font-weight: 600; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--muted);
+  margin: 26px 0 8px;
+}
+p { margin: 0 0 14px; max-width: 70ch; }
+main > section > p, main > section > ul, main > section > ol { max-width: 70ch; }
+ul, ol { margin: 0 0 16px; padding-left: 22px; }
+li { margin-bottom: 7px; max-width: 66ch; }
+li::marker { color: var(--muted); }
+strong { font-weight: 600; color: var(--ink); }
+.lede { font-size: 18.5px; color: var(--ink-2); }
+.small { font-size: 14px; line-height: 1.55; color: var(--muted); }
+.mono { font-family: "IBM Plex Mono", monospace; font-size: 0.84em; }
+
+/* ---------- callouts ---------- */
+.callout {
+  border-left: 3px solid var(--accent);
+  background: var(--accent-soft);
+  padding: 15px 18px; margin: 22px 0;
+  border-radius: 0 7px 7px 0;
+}
+.callout .k {
+  display: block; margin-bottom: 5px;
+  font-family: "Archivo", sans-serif;
+  font-size: 9.5px; font-weight: 600; letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--accent);
+}
+.callout p { margin: 0; max-width: 66ch; }
+.callout p + p { margin-top: 8px; }
+.callout.warn { border-color: var(--amber); background: var(--amber-soft); }
+.callout.warn .k { color: var(--amber); }
+.callout.proof { border-color: var(--green); background: var(--green-soft); }
+.callout.proof .k { color: var(--green); }
+
+/* ---------- code ---------- */
+code {
+  font-family: "IBM Plex Mono", Consolas, monospace;
+  font-size: 0.84em;
+  background: var(--code-inline);
+  padding: 1px 5px; border-radius: 3px;
+  overflow-wrap: anywhere;
+}
+pre {
+  background: var(--code-bg);
+  color: var(--code-fg);
+  padding: 16px 18px;
+  border-radius: 8px;
+  overflow-x: auto;
+  margin: 16px 0 20px;
+  font-family: "IBM Plex Mono", Consolas, monospace;
+  font-size: 12.3px;
+  line-height: 1.6;
+  tab-size: 2;
+}
+pre code { background: none; padding: 0; font-size: inherit; color: inherit; overflow-wrap: normal; }
+.c { color: var(--code-comment); }
+.kw { color: var(--code-key); }
+.st { color: var(--code-str); }
+.nm { color: var(--code-num); }
+
+/* ---------- tables ---------- */
+.tablewrap {
+  overflow-x: auto;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--surface);
+  margin: 16px 0 22px;
+  box-shadow: var(--shadow);
+}
+table { border-collapse: collapse; width: 100%; font-size: 13.2px; line-height: 1.45; }
+th {
+  font-family: "Archivo", sans-serif;
+  font-size: 9.5px; font-weight: 600; letter-spacing: 0.1em;
+  text-transform: uppercase; text-align: left; color: var(--muted);
+  background: var(--surface-2);
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--rule);
+  white-space: nowrap;
+}
+td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--rule);
+  vertical-align: top;
+  color: var(--ink-2);
+}
+td strong { color: var(--ink); }
+tr:last-child td { border-bottom: none; }
+td code, th code { white-space: nowrap; }
+.col-name { width: 24%; }
+.col-type { width: 22%; white-space: nowrap; }
+.num { text-align: right; font-variant-numeric: tabular-nums; }
+.caption {
+  font-family: "Archivo", sans-serif;
+  font-size: 11px; color: var(--muted);
+  margin: -14px 0 22px; line-height: 1.5;
+}
+
+/* ---------- badges ---------- */
+.badge {
+  display: inline-block;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 9px; letter-spacing: 0.06em; text-transform: uppercase;
+  padding: 2px 5px; border-radius: 3px;
+  border: 1px solid var(--rule-strong);
+  color: var(--muted); background: var(--surface-2);
+  white-space: nowrap; vertical-align: 2px;
+}
+.badge.dist { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+.badge.ref { color: var(--green); border-color: var(--green); background: var(--green-soft); }
+.badge.proj { color: var(--amber); border-color: var(--amber); background: var(--amber-soft); }
+.badge.read { color: var(--ink-2); border-color: var(--rule-strong); background: var(--surface-2); }
+
+/* ---------- figures ---------- */
+.figure {
+  margin: 24px 0 28px;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  padding: 16px 16px 12px;
+  box-shadow: var(--shadow);
+}
+.figure-scroll { overflow-x: auto; }
+.figure svg { display: block; width: 100%; height: auto; min-width: 700px; }
+.figcap {
+  font-family: "Archivo", sans-serif;
+  font-size: 11px; line-height: 1.5; color: var(--muted);
+  margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--rule);
+}
+.figcap b { color: var(--ink-2); font-weight: 600; }
+
+/* SVG diagram */
+.node rect { fill: var(--surface); stroke: var(--rule-strong); stroke-width: 1.2; }
+.node .t { font-family: "Archivo", sans-serif; font-size: 13.5px; font-weight: 600; fill: var(--ink); }
+.node .s { font-family: "IBM Plex Mono", monospace; font-size: 9.6px; fill: var(--muted); }
+.node .s2 { font-family: "IBM Plex Mono", monospace; font-size: 9.2px; fill: var(--muted); }
+.node.citus rect { stroke: var(--accent); stroke-width: 1.7; }
+.node.async rect { stroke: var(--green); stroke-width: 1.5; }
+.node.loader rect { stroke-dasharray: 4 3; }
+.edge { stroke: var(--muted); stroke-width: 1.3; fill: none; }
+.edge.dash { stroke-dasharray: 5 4; }
+.edge.accent { stroke: var(--accent); stroke-width: 1.5; }
+.edge.green { stroke: var(--green); stroke-width: 1.5; }
+.elabel { font-family: "IBM Plex Mono", monospace; font-size: 9.2px; fill: var(--muted); }
+.elabel.a { fill: var(--accent); }
+.elabel.g { fill: var(--green); }
+#arw path { fill: var(--muted); }
+#arwa path { fill: var(--accent); }
+#arwg path { fill: var(--green); }
+
+/* placement map */
+.placements { display: grid; grid-template-columns: 1.35fr 1fr; gap: 12px; margin: 18px 0 8px; }
+.place-card {
+  border: 1px solid var(--rule); background: var(--surface);
+  border-radius: 8px; padding: 14px 15px 12px;
+  box-shadow: var(--shadow); min-width: 0;
+}
+.place-card.wide { grid-column: 1 / -1; }
+.place-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 9px; }
+.place-head h4 {
+  margin: 0; font-family: "Archivo", sans-serif;
+  font-size: 13.5px; font-weight: 600; text-transform: none;
+  letter-spacing: -0.005em; color: var(--ink);
+}
+.place-sub {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 9.5px; color: var(--muted); margin: -3px 0 9px;
+}
+.place-row {
+  display: flex; justify-content: space-between; gap: 12px;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10.8px; line-height: 1.4;
+  padding: 4px 0; border-bottom: 1px dashed var(--rule);
+  color: var(--ink-2); min-width: 0;
+}
+.place-row:last-of-type { border-bottom: none; }
+.place-row span:last-child { color: var(--muted); text-align: right; overflow-wrap: anywhere; }
+.place-foot {
+  margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--rule);
+  font-size: 11.5px; line-height: 1.45; color: var(--muted);
+}
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 18px 0; }
+.panel {
+  border: 1px solid var(--rule); background: var(--surface);
+  border-radius: 8px; padding: 14px 16px; min-width: 0;
+}
+.panel h4 { margin-top: 0; margin-bottom: 6px; }
+.panel p:last-child, .panel ul:last-child { margin-bottom: 0; }
+
+/* steps */
+.steps { list-style: none; padding: 0; margin: 20px 0; border-left: 2px solid var(--rule); }
+.steps li {
+  position: relative; padding: 0 0 16px 22px; margin: 0;
+  max-width: 68ch;
+}
+.steps li::before {
+  content: ""; position: absolute; left: -6px; top: 7px;
+  width: 10px; height: 10px; border-radius: 50%;
+  background: var(--paper); border: 2px solid var(--accent);
+}
+.steps li:last-child { padding-bottom: 0; }
+.steps .st {
+  display: block; font-family: "IBM Plex Mono", monospace;
+  font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--accent); margin-bottom: 2px;
+}
+.steps b { font-family: "Archivo", sans-serif; font-weight: 600; font-size: 14.5px; }
+
+/* small evidence grid */
+.evidence { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 18px 0; }
+.ev {
+  border: 1px solid var(--rule); border-left: 3px solid var(--green);
+  background: var(--surface); border-radius: 0 7px 7px 0;
+  padding: 13px 15px; min-width: 0;
+}
+.ev .n {
+  font-family: "Archivo", sans-serif; font-size: 22px; font-weight: 600;
+  letter-spacing: -0.02em; font-variant-numeric: tabular-nums; line-height: 1.15;
+}
+.ev .d { font-size: 12.5px; line-height: 1.45; color: var(--muted); margin-top: 3px; }
+
+/* footer */
+footer {
+  margin-top: 72px; padding-top: 18px; border-top: 1px solid var(--rule-strong);
+  font-family: "Archivo", sans-serif; font-size: 11px; line-height: 1.7;
+  color: var(--muted);
+}
+footer b { color: var(--ink-2); font-weight: 600; }
+
+.mobile-toc { display: none; margin-top: 26px; border: 1px solid var(--rule); border-radius: 8px; background: var(--surface); }
+.mobile-toc summary {
+  cursor: pointer; padding: 11px 14px;
+  font-family: "Archivo", sans-serif; font-size: 12px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-2);
+}
+.mobile-toc .toc { padding: 0 14px 12px; }
+
+@media (max-width: 1020px) {
+  .page { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .sidebar { display: none; }
+  .mobile-toc { display: block; }
+  main { max-width: 760px; margin: 0 auto; }
+}
+@media (max-width: 700px) {
+  body { font-size: 16px; padding-bottom: 64px; }
+  .cover { padding-top: 38px; }
+  .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .stat { border-right: none; border-bottom: 1px solid var(--rule); padding: 13px 8px 12px 0; }
+  .stat:nth-child(odd) { border-right: 1px solid var(--rule); }
+  .stat:last-child { border-bottom: none; }
+  .stat .v { font-size: 21px; }
+  .two-col, .placements, .evidence { grid-template-columns: minmax(0, 1fr); }
+  .place-card.wide { grid-column: auto; }
+  section { padding-top: 50px; }
+  h1 { font-size: 38px; }
+  .deck { font-size: 18px; }
+  .figure { padding: 10px 10px 9px; }
+  table { font-size: 12.4px; }
+  th, td { padding: 7px 9px; }
+  .col-type { white-space: normal; }
+  pre { font-size: 11.4px; padding: 14px; }
+}
+@media print {
+  .sidebar, .mobile-toc { display: none; }
+  .page { display: block; max-width: none; }
+  main { max-width: none; }
+  body { padding: 0; background: #fff; color: #000; }
+  section { break-inside: avoid-page; }
+  pre, .tablewrap, .figure { break-inside: avoid; }
+}
+</style>
+
+<div class="page">
+  <aside class="sidebar" aria-label="Contents">
+    <div class="brand">
+      <div class="brand-mark">DAI</div>
+      <div class="brand-text"><strong>Distributed Airline Inventory</strong>Course dossier</div>
+    </div>
+    <p class="toc-label">Contents</p>
+    <nav class="toc">
+      <a href="#problem"><span class="n">01</span><span>The problem</span></a>
+      <a href="#architecture"><span class="n">02</span><span>Architecture</span></a>
+      <a href="#schema"><span class="n">03</span><span>Database schema</span></a>
+      <a href="#distribution"><span class="n">04</span><span>Distribution mechanics</span></a>
+      <a href="#concurrency"><span class="n">05</span><span>Concurrency and invariants</span></a>
+      <a href="#saga"><span class="n">06</span><span>Booking saga</span></a>
+      <a href="#consistency"><span class="n">07</span><span>Consistency across stores</span></a>
+      <a href="#paths"><span class="n">08</span><span>End-to-end paths</span></a>
+      <a href="#operations"><span class="n">09</span><span>Operations</span></a>
+      <a href="#evidence"><span class="n">10</span><span>Evidence</span></a>
+      <a href="#tradeoffs"><span class="n">11</span><span>Trade-offs</span></a>
+      <a href="#concepts"><span class="n">12</span><span>Course concept map</span></a>
+      <a href="#demo"><span class="n">13</span><span>Demo script</span></a>
+    </nav>
+    <div class="side-meta">
+      <b>Citus</b> 14.2<br>
+      <b>PostgreSQL</b> 17<br>
+      <b>Node</b> 20 · Express<br>
+      <b>Measured</b> 10,000,017 flights<br>
+      <b>Compiled</b> October 2026
+    </div>
+  </aside>
+
+  <main>
+    <header class="cover">
+      <div class="eyebrow">Distributed Database Systems · Course Project</div>
+      <h1>Distributed Airline Inventory</h1>
+      <p class="deck">A seat-inventory backend where the database, not the application, guarantees that no flight is ever oversold, while every booking stays a single-shard ACID transaction.</p>
+      <div class="chips">
+        <span class="chip">Citus 14.2</span>
+        <span class="chip">PostgreSQL 17</span>
+        <span class="chip">Node.js 20</span>
+        <span class="chip">Express</span>
+        <span class="chip">Redis 7</span>
+        <span class="chip">Prometheus</span>
+        <span class="chip">Docker / Kubernetes</span>
+      </div>
+
+      <div class="stats" aria-label="Project at a glance">
+        <div class="stat"><div class="v">10,000,017</div><div class="l">flights loaded<br>and measured</div></div>
+        <div class="stat"><div class="v">22.06M</div><div class="l">inventory counter<br>rows</div></div>
+        <div class="stat"><div class="v">5</div><div class="l">co-located tables<br>one transaction</div></div>
+        <div class="stat"><div class="v">2</div><div class="l">distribution groups<br>by design</div></div>
+        <div class="stat"><div class="v">0</div><div class="l">oversells under<br>concurrency tests</div></div>
+      </div>
+
+      <div class="callout">
+        <span class="k">What this document covers</span>
+        <p>The problem and the design thesis; the runtime topology; every table, key, constraint and index; the Citus distribution and partitioning strategy; the anti-oversell statement; the booking saga, idempotency and retry model; the transactional outbox and CQRS read model; the operational tooling; and the tests that prove the claims. Section 12 maps each mechanism to the distributed-database concept it demonstrates, for use during a presentation.</p>
+      </div>
+
+      <details class="mobile-toc">
+        <summary>Contents</summary>
+        <nav class="toc">
+          <a href="#problem"><span class="n">01</span><span>The problem</span></a>
+          <a href="#architecture"><span class="n">02</span><span>Architecture</span></a>
+          <a href="#schema"><span class="n">03</span><span>Database schema</span></a>
+          <a href="#distribution"><span class="n">04</span><span>Distribution mechanics</span></a>
+          <a href="#concurrency"><span class="n">05</span><span>Concurrency and invariants</span></a>
+          <a href="#saga"><span class="n">06</span><span>Booking saga</span></a>
+          <a href="#consistency"><span class="n">07</span><span>Consistency across stores</span></a>
+          <a href="#paths"><span class="n">08</span><span>End-to-end paths</span></a>
+          <a href="#operations"><span class="n">09</span><span>Operations</span></a>
+          <a href="#evidence"><span class="n">10</span><span>Evidence</span></a>
+          <a href="#tradeoffs"><span class="n">11</span><span>Trade-offs</span></a>
+          <a href="#concepts"><span class="n">12</span><span>Course concept map</span></a>
+          <a href="#demo"><span class="n">13</span><span>Demo script</span></a>
+        </nav>
+      </details>
+    </header>
+
+    <section id="problem">
+      <div class="sec-head"><span class="sec-num">01</span><h2>A correctness problem at airline scale</h2></div>
+
+      <p class="lede">Airline inventory looks like a CRUD application until two customers buy the last seat at the same moment. Then it becomes a distributed-systems problem: the same fact is being changed from several processes, on several machines, and the business loses money when the copies disagree.</p>
+
+      <p>The system sells seats on scheduled flights. Each flight has cabins, each cabin has a capacity, and a booking moves through a hold and a payment before it becomes a sale. Four invariants must hold no matter how many API instances are running or how many buyers race for the same row:</p>
+
+      <ol>
+        <li><strong>Capacity.</strong> A cabin never sells or holds more seats than it has.</li>
+        <li><strong>Seat identity.</strong> At most one live booking may hold a given physical seat on a given flight.</li>
+        <li><strong>Exactly-once effect.</strong> A retried request, a duplicated message, or a replayed event must not create a second booking or consume a second seat.</li>
+        <li><strong>Read availability.</strong> Search must stay fast while the write model changes continuously.</li>
+      </ol>
+
+      <p>The scale makes the obvious designs fail:</p>
+
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th style="width:26%">Naive design</th><th>Why it breaks</th></tr></thead>
+          <tbody>
+            <tr><td><strong>One row per physical seat</strong></td><td>At 50 million flights with roughly 200 seats each, this is about 10 billion rows before a single booking exists. The seat table, its indexes and every seat-map query become the bottleneck.</td></tr>
+            <tr><td><strong>Counter read, then write, in application code</strong></td><td>Two buyers read <code>available = 1</code>, both subtract one, both write <code>0</code>, and two seats are sold. The lost update is invisible until the flight departs.</td></tr>
+            <tr><td><strong>Shard by booking identifier</strong></td><td>The booking, its payment and the inventory counter it changes can land on different shards, so one logical operation needs a distributed commit.</td></tr>
+            <tr><td><strong>One large PostgreSQL server</strong></td><td>Correct, but write throughput, storage and read traffic all have to fit on one machine. The interesting question is what to do when they do not.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="callout">
+        <span class="k">Design thesis</span>
+        <p>Choose a distribution key that makes the invariant local. Enforce the invariant in one SQL statement whose predicate the database re-checks while holding the row lock. Move everything that cannot be local into an explicitly eventual, rebuildable projection fed by a transactional outbox.</p>
+      </div>
+
+      <p>Every decision in the rest of this document follows from that thesis. The distribution key is <code>flight_id</code>. The anti-oversell rule is a conditional <code>UPDATE</code>. Search and the per-user booking list are projections, not authoritative tables.</p>
+    </section>
+
+    <section id="architecture">
+      <div class="sec-head"><span class="sec-num">02</span><h2>Runtime architecture</h2></div>
+
+      <p>The deployment is a shared-nothing write cluster with a separate read store and a stateless application tier. The API never chooses a shard; it issues ordinary SQL to the Citus coordinator, which plans the query, routes each fragment to the worker that owns the relevant shard, and merges the result.</p>
+
+      <div class="figure">
+        <div class="figure-scroll">
+          <svg viewBox="0 0 900 620" role="img" aria-label="Runtime topology: clients and loaders feed a stateless API tier, which reaches the Citus coordinator through PgBouncer; the coordinator routes to two workers; background workers project into a separate read-model database.">
+            <defs>
+              <marker id="arw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path d="M0,0 L10,5 L0,10 z"/>
+              </marker>
+              <marker id="arwa" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path d="M0,0 L10,5 L0,10 z"/>
+              </marker>
+              <marker id="arwg" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path d="M0,0 L10,5 L0,10 z"/>
+              </marker>
+            </defs>
+
+            <!-- nodes -->
+            <g class="node">
+              <rect x="290" y="20" width="220" height="52" rx="7"/>
+              <text class="t" x="308" y="42">Clients</text>
+              <text class="s" x="308" y="58">HTTP · Idempotency-Key</text>
+            </g>
+            <g class="node loader">
+              <rect x="690" y="20" width="190" height="52" rx="7"/>
+              <text class="t" x="706" y="42">Bulk loaders</text>
+              <text class="s" x="706" y="58">Python · COPY · resumable</text>
+            </g>
+            <g class="node">
+              <rect x="290" y="112" width="220" height="76" rx="7"/>
+              <text class="t" x="308" y="136">API tier</text>
+              <text class="s" x="308" y="154">Express · stateless</text>
+              <text class="s2" x="308" y="170">api-1 / api-2 / api-3 …</text>
+            </g>
+            <g class="node">
+              <rect x="610" y="121" width="150" height="58" rx="7"/>
+              <text class="t" x="626" y="144">Redis</text>
+              <text class="s" x="626" y="161">SET NX · cache · limits</text>
+            </g>
+            <g class="node">
+              <rect x="310" y="232" width="180" height="52" rx="7"/>
+              <text class="t" x="328" y="254">PgBouncer</text>
+              <text class="s" x="328" y="270">transaction pooling</text>
+            </g>
+            <g class="node citus">
+              <rect x="290" y="324" width="220" height="70" rx="7"/>
+              <text class="t" x="308" y="348">Citus coordinator</text>
+              <text class="s" x="308" y="365">plans · routes · merges</text>
+              <text class="s2" x="308" y="381">holds no business data</text>
+            </g>
+            <g class="node citus">
+              <rect x="150" y="446" width="220" height="76" rx="7"/>
+              <text class="t" x="168" y="470">worker1</text>
+              <text class="s" x="168" y="488">shard placements</text>
+              <text class="s2" x="168" y="504">reference-table copies</text>
+            </g>
+            <g class="node citus">
+              <rect x="440" y="446" width="220" height="76" rx="7"/>
+              <text class="t" x="458" y="470">worker2</text>
+              <text class="s" x="458" y="488">shard placements</text>
+              <text class="s2" x="458" y="504">reference-table copies</text>
+            </g>
+            <g class="node async">
+              <rect x="690" y="324" width="190" height="70" rx="7"/>
+              <text class="t" x="706" y="348">Read model DB</text>
+              <text class="s" x="706" y="365">PostgreSQL 17</text>
+              <text class="s2" x="706" y="381">flight_availability</text>
+            </g>
+            <g class="node async">
+              <rect x="690" y="446" width="190" height="76" rx="7"/>
+              <text class="t" x="706" y="470">Background workers</text>
+              <text class="s" x="706" y="488">outbox projector</text>
+              <text class="s2" x="706" y="504">hold reaper · saga reconciler</text>
+            </g>
+
+            <!-- edges -->
+            <line class="edge" x1="400" y1="72" x2="400" y2="108" marker-end="url(#arw)"/>
+            <line class="edge" x1="400" y1="188" x2="400" y2="228" marker-end="url(#arw)"/>
+            <line class="edge" x1="400" y1="284" x2="400" y2="320" marker-end="url(#arw)"/>
+            <line class="edge accent" x1="510" y1="140" x2="606" y2="140" marker-end="url(#arwa)"/>
+            <text class="elabel a" x="558" y="132" text-anchor="middle">claim</text>
+
+            <line class="edge accent" x1="362" y1="394" x2="268" y2="442" marker-end="url(#arwa)"/>
+            <line class="edge accent" x1="438" y1="394" x2="532" y2="442" marker-end="url(#arwa)"/>
+            <text class="elabel a" x="400" y="426" text-anchor="middle">shard routing</text>
+
+            <path class="edge dash" d="M510 168 L560 168 L560 360 L686 360" marker-end="url(#arw)"/>
+            <text class="elabel" x="568" y="252">search</text>
+
+            <line class="edge green" x1="760" y1="442" x2="760" y2="398" marker-end="url(#arwg)"/>
+            <text class="elabel g" x="768" y="425">project</text>
+
+            <path class="edge dash" d="M690 484 L680 484 L680 380 L514 380" marker-end="url(#arw)"/>
+            <text class="elabel" x="585" y="372" text-anchor="middle">poll outbox</text>
+
+            <path class="edge dash" d="M690 46 L580 46 L580 340 L514 340" marker-end="url(#arw)"/>
+            <text class="elabel" x="588" y="206">bulk COPY</text>
+
+            <path class="edge dash" d="M800 72 L800 320" marker-end="url(#arw)"/>
+            <text class="elabel" x="808" y="198">load read model</text>
+          </svg>
+        </div>
+        <div class="figcap"><b>Figure 1.</b> Runtime topology. Solid lines are synchronous request paths; dashed lines are background or bulk paths. The coordinator owns no business rows: it holds shard metadata and query planning. Reference tables are replicated to both workers, so dimension joins stay local.</div>
+      </div>
+
+      <h3>Components and responsibilities</h3>
+
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th style="width:22%">Component</th><th>Responsibility</th></tr></thead>
+          <tbody>
+            <tr><td><strong>API tier</strong></td><td>Express application, fully stateless. Any instance can serve any request. <code>NODE_ID</code> is written into logs, the <code>x-node-id</code> response header and <code>bookings.node_id</code>. Scale by adding replicas.</td></tr>
+            <tr><td><strong>PgBouncer</strong></td><td>Transaction pooling in front of the coordinator. Safe because the booking path keeps no session state between statements and uses no named prepared statements.</td></tr>
+            <tr><td><strong>Citus coordinator</strong></td><td>Query planning, shard routing and result merging. It stores no business rows. This is the single logical endpoint for writes.</td></tr>
+            <tr><td><strong>worker1 / worker2</strong></td><td>Physical shard storage and replicated reference tables. The placement of each shard is recorded in <code>pg_dist_placement</code>.</td></tr>
+            <tr><td><strong>Read model database</strong></td><td>An independent PostgreSQL 17 database holding <code>flight_availability</code> and <code>projection_state</code>. Deliberately outside the Citus cluster: search may lag, and a slow search must not hold a lock that blocks a sale.</td></tr>
+            <tr><td><strong>Redis</strong></td><td>Idempotency claims (<code>SET NX</code>), rate limits and caches. Optional: without it the process-local driver keeps single-node correctness, and the database constraints remain the real guarantee.</td></tr>
+            <tr><td><strong>Background workers</strong></td><td>Outbox projector, hold reaper and saga reconciler. Kept in a separate process from the API so a worker crash never takes the API down.</td></tr>
+            <tr><td><strong>Bulk loaders</strong></td><td>Python <code>COPY</code> pipelines that load flights, inventory, users and the read model at scale. Deterministic and resumable at day granularity.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>The same application code runs against a single local PostgreSQL instance and against a Citus cluster. Migrations detect the capability and either distribute tables or leave them as ordinary local tables. That portability is what lets the test suite run without Docker while the deployment runs distributed.</p>
+    </section>
+
+    <section id="schema">
+      <div class="sec-head"><span class="sec-num">03</span><h2>Database schema</h2></div>
+
+      <p>The schema is split by role: small dimensions that every query needs, a booking path that must stay on one shard, a second group for per-user access, and a separate read model. The write model lives in the <code>airline_inventory</code> database; the read model lives in <code>airline_read</code>.</p>
+
+      <h3>3.1 Schema at a glance</h3>
+
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th style="width:24%">Table</th><th style="width:22%">Placement</th><th style="width:18%">Partitioned</th><th>Purpose</th></tr></thead>
+          <tbody>
+            <tr><td><code>airlines</code></td><td><span class="badge ref">reference</span></td><td>no</td><td>Airline dimension.</td></tr>
+            <tr><td><code>airports</code></td><td><span class="badge ref">reference</span></td><td>no</td><td>Airport dimension, including timezone and region.</td></tr>
+            <tr><td><code>cabins</code></td><td><span class="badge ref">reference</span></td><td>no</td><td>Cabin codes and ordering.</td></tr>
+            <tr><td><code>aircraft_types</code></td><td><span class="badge ref">reference</span></td><td>no</td><td>Aircraft type dimension.</td></tr>
+            <tr><td><code>seat_map_templates</code></td><td><span class="badge ref">reference</span></td><td>no</td><td>Seat layout per aircraft type, not per flight.</td></tr>
+            <tr><td><code>users</code></td><td><span class="badge ref">reference</span></td><td>no</td><td>Accounts; small, read-mostly, joined on every authenticated request.</td></tr>
+            <tr><td><code>regions</code></td><td><span class="badge">coordinator-local</span></td><td>no</td><td>Five-region lookup added later; deliberately no foreign keys.</td></tr>
+            <tr><td><code>flights</code></td><td><span class="badge dist">flight_id</span></td><td>monthly</td><td>Schedule and base price. The root of the booking path.</td></tr>
+            <tr><td><code>flight_inventory</code></td><td><span class="badge dist">flight_id</span></td><td>monthly</td><td>Seat counters per flight, cabin and counter shard.</td></tr>
+            <tr><td><code>bookings</code></td><td><span class="badge dist">flight_id</span></td><td>monthly</td><td>Holds and sales; the physical seat materialises here.</td></tr>
+            <tr><td><code>payments</code></td><td><span class="badge dist">flight_id</span></td><td>monthly</td><td>One payment per booking, with persisted saga state.</td></tr>
+            <tr><td><code>booking_outbox</code></td><td><span class="badge dist">flight_id</span></td><td>monthly</td><td>Domain events written in the same transaction as the state change.</td></tr>
+            <tr><td><code>user_bookings</code></td><td><span class="badge proj">user_id</span></td><td>no</td><td>Per-user booking index, maintained asynchronously.</td></tr>
+            <tr><td><code>refresh_tokens</code></td><td><span class="badge proj">user_id</span></td><td>no</td><td>Rotating refresh-token families, co-located with <code>user_bookings</code>.</td></tr>
+            <tr><td><code>flight_availability</code></td><td><span class="badge read">read DB</span></td><td>monthly</td><td>Denormalised search row per route, date, flight and cabin.</td></tr>
+            <tr><td><code>projection_state</code></td><td><span class="badge read">read DB</span></td><td>no</td><td>Projection watermark used to report lag.</td></tr>
+            <tr><td><code>schema_migrations</code></td><td><span class="badge">per database</span></td><td>no</td><td>Applied migrations, checksums and execution time.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>3.2 Data placement: two co-location groups and a replicated set</h3>
+
+      <p>This is the part of the schema that makes the system distributed rather than merely partitioned. Every table is assigned to exactly one placement strategy, and the strategy is chosen from the access path, not from the entity relationship.</p>
+
+      <div class="placements">
+        <div class="place-card">
+          <div class="place-head"><h4>Group 1 · booking path</h4><span class="badge dist">flight_id</span></div>
+          <p class="place-sub">32 hash shards · one colocation group</p>
+          <div class="place-row"><span>flights</span><span>(flight_id, departure_date)</span></div>
+          <div class="place-row"><span>flight_inventory</span><span>(flight_id, date, cabin, shard_no)</span></div>
+          <div class="place-row"><span>bookings</span><span>(flight_id, date, booking_id)</span></div>
+          <div class="place-row"><span>payments</span><span>(flight_id, date, payment_id)</span></div>
+          <div class="place-row"><span>booking_outbox</span><span>(flight_id, date, event_id)</span></div>
+          <div class="place-foot">The same <code>flight_id</code> always hashes to the same shard, and every table in this group places that shard on the same worker. A booking touches one worker.</div>
+        </div>
+
+        <div class="place-card">
+          <div class="place-head"><h4>Group 2 · per-user paths</h4><span class="badge proj">user_id</span></div>
+          <p class="place-sub">separate colocation group</p>
+          <div class="place-row"><span>user_bookings</span><span>(user_id, booking_id)</span></div>
+          <div class="place-row"><span>refresh_tokens</span><span>(user_id, token_id)</span></div>
+          <div class="place-foot">A different distribution key means a different shard. This group is fed asynchronously from the outbox, never written in the booking transaction.</div>
+        </div>
+
+        <div class="place-card wide">
+          <div class="place-head"><h4>Reference set · replicated in full to every worker</h4><span class="badge ref">replicated</span></div>
+          <div class="place-row"><span>airlines · airports · cabins</span><span>small dimensions</span></div>
+          <div class="place-row"><span>aircraft_types · seat_map_templates</span><span>seat layout by aircraft type</span></div>
+          <div class="place-row"><span>users</span><span>~100k rows, auth read on every request</span></div>
+          <div class="place-foot">Reference tables have a single shard replicated to every node. A distributed query joins them locally on whichever worker holds the fact table, with no network hop. <code>regions</code> is a later lookup and is not part of this set; no distributed table has a foreign key to it.</div>
+        </div>
+
+        <div class="place-card wide">
+          <div class="place-head"><h4>Read model · a separate database, not a Citus group</h4><span class="badge read">eventual</span></div>
+          <div class="place-row"><span>flight_availability</span><span>(origin, destination, date, flight_id, cabin)</span></div>
+          <div class="place-row"><span>projection_state</span><span>(projection)</span></div>
+          <div class="place-foot">Written only by the projector, read by search. It can be dropped and rebuilt from the outbox, which is why it is allowed to lag.</div>
+        </div>
+      </div>
+
+      <div class="callout">
+        <span class="k">Why the keys look unusual</span>
+        <p>Every primary key contains both the distribution column and the partition key. Citus requires the distribution column in every unique constraint; PostgreSQL requires every partition-key column in the primary key of a partitioned table. The composite keys are a consequence of those two rules, not an arbitrary modelling choice.</p>
+      </div>
+
+      <h3>3.3 The booking-path tables</h3>
+
+      <h4>flights</h4>
+      <p>The schedule. <code>flight_id</code> is generated as a UUIDv7, and <code>departure_date</code> is derived from the UTC departure time and enforced by a check constraint, so a row can never sit in the wrong monthly partition.</p>
+
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th class="col-name">Column</th><th class="col-type">Type</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr><td><code>flight_id</code></td><td>uuid</td><td>Distribution key; part of the primary key; default <code>app_uuidv7()</code>.</td></tr>
+            <tr><td><code>flight_number</code></td><td>text</td><td>Marketing number, for example <code>PK-301</code>.</td></tr>
+            <tr><td><code>airline_code</code></td><td>text</td><td>Logical reference to <code>airlines.code</code>.</td></tr>
+            <tr><td><code>origin</code>, <code>destination</code></td><td>text</td><td>Airport codes. <code>CHECK (origin &lt;&gt; destination)</code>.</td></tr>
+            <tr><td><code>departure_date</code></td><td>date</td><td>Partition key and second primary-key column.</td></tr>
+            <tr><td><code>departure_time</code></td><td>timestamptz</td><td>Actual scheduled departure.</td></tr>
+            <tr><td><code>arrival_time</code></td><td>timestamptz</td><td><code>CHECK (arrival_time &gt; departure_time)</code>.</td></tr>
+            <tr><td><code>aircraft_type</code></td><td>text</td><td>Logical reference to the seat-map template.</td></tr>
+            <tr><td><code>base_price</code></td><td>numeric(10,2)</td><td><code>CHECK &gt;= 0</code>; cabin prices are derived from it.</td></tr>
+            <tr><td><code>currency</code></td><td>text</td><td>Default <code>USD</code>.</td></tr>
+            <tr><td><code>status</code></td><td>text</td><td><code>SCHEDULED</code>, <code>ACTIVE</code>, <code>DEPARTED</code>, <code>COMPLETED</code>, <code>CANCELLED</code>.</td></tr>
+            <tr><td><code>created_at</code>, <code>updated_at</code></td><td>timestamptz</td><td>Audit timestamps.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="caption">Primary key <code>(flight_id, departure_date)</code>. Constraint <code>ck_flights_departure_date</code> enforces <code>departure_date = (departure_time AT TIME ZONE 'UTC')::date</code>.</p>
+
+      <p><strong>Indexes.</strong> <code>(flight_number, departure_date)</code> for lookup by number; <code>(origin, destination, departure_date)</code> for route queries; <code>(status, departure_date)</code> for operational sweeps. A <code>(region, departure_date)</code> reporting index is built after the bulk load, because maintaining it during <code>COPY</code> would dominate load time.</p>
+
+      <h4>flight_inventory</h4>
+      <p>One counter row per flight, cabin and counter shard. It holds no seat identities; seats appear only when a booking takes one.</p>
+
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th class="col-name">Column</th><th class="col-type">Type</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr><td><code>flight_id</code></td><td>uuid</td><td>Distribution key.</td></tr>
+            <tr><td><code>departure_date</code></td><td>date</td><td>Partition key.</td></tr>
+            <tr><td><code>cabin</code></td><td>text</td><td><code>ECONOMY</code>, <code>PREMIUM</code>, <code>BUSINESS</code>, <code>FIRST</code> in the seed data.</td></tr>
+            <tr><td><code>shard_no</code></td><td>smallint</td><td>Counter row within the cabin. Default <code>0</code>; present from day one so a hot counter can be split without a schema change.</td></tr>
+            <tr><td><code>total_seats</code></td><td>integer</td><td>Capacity of this counter row; <code>CHECK &gt;= 0</code>.</td></tr>
+            <tr><td><code>available_seats</code></td><td>integer</td><td>Seats that can still be sold; <code>CHECK &gt;= 0</code>.</td></tr>
+            <tr><td><code>held_seats</code></td><td>integer</td><td>Seats reserved by <code>PENDING</code> bookings; default <code>0</code>, <code>CHECK &gt;= 0</code>.</td></tr>
+            <tr><td><code>version</code></td><td>bigint</td><td>Incremented on every mutation; used for optional optimistic concurrency and as the projection version.</td></tr>
+            <tr><td><code>updated_at</code></td><td>timestamptz</td><td>Last counter change.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="caption">Primary key <code>(flight_id, departure_date, cabin, shard_no)</code>. <code>CONSTRAINT inv_capacity CHECK (available_seats + held_seats &lt;= total_seats)</code>.</p>
+
+      <p>The accounting identity is deliberately simple. <strong>Confirmed seats = total − available − held.</strong> A reservation moves one seat from available to held, so the sum does not change. A confirmation removes it from held. A release returns it to available. A reclaim on cancellation adds it back to available. Section 5.2 lists the transitions and the audit that checks them.</p>
+
+      <h4>bookings</h4>
+      <p>The authoritative record of a hold or a sale. The physical seat number lives here, and only here, which is why the seat map can be derived from a template plus a small set of live bookings.</p>
+
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th class="col-name">Column</th><th class="col-type">Type</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr><td><code>booking_id</code></td><td>uuid</td><td>Default <code>app_uuidv7()</code>; third key column.</td></tr>
+            <tr><td><code>booking_reference</code></td><td>text</td><td>Human-readable code. The generator checks the whole cluster before handing one out; the unique index enforces it per flight.</td></tr>
+            <tr><td><code>flight_id</code></td><td>uuid</td><td>Distribution key.</td></tr>
+            <tr><td><code>departure_date</code></td><td>date</td><td>Partition key.</td></tr>
+            <tr><td><code>user_id</code></td><td>uuid</td><td>Owner. Not the distribution key, which is why the per-user projection exists.</td></tr>
+            <tr><td><code>cabin</code></td><td>text</td><td>Booked cabin.</td></tr>
+            <tr><td><code>inventory_shard</code></td><td>smallint</td><td>Which counter row was decremented, so confirm/release target the same row.</td></tr>
+            <tr><td><code>seat_number</code></td><td>text</td><td>Nullable; uppercase enforced. The physical seat materialises here.</td></tr>
+            <tr><td><code>passenger_name</code>, <code>passenger_ref</code></td><td>text</td><td>Passenger details.</td></tr>
+            <tr><td><code>status</code></td><td>text</td><td><code>PENDING</code>, <code>CONFIRMED</code>, <code>CANCELLED</code>, <code>EXPIRED</code>.</td></tr>
+            <tr><td><code>price</code>, <code>currency</code></td><td>numeric(10,2), text</td><td>Price snapshot at booking time.</td></tr>
+            <tr><td><code>idempotency_key</code></td><td>text</td><td>Client-supplied request key; nullable.</td></tr>
+            <tr><td><code>hold_expires_at</code></td><td>timestamptz</td><td>Required while <code>PENDING</code>; drives the reaper.</td></tr>
+            <tr><td><code>node_id</code>, <code>transaction_id</code></td><td>text, uuid</td><td>Which API instance served the request and its correlation id.</td></tr>
+            <tr><td><code>payment_id</code></td><td>uuid</td><td>Attached when the payment is created.</td></tr>
+            <tr><td><code>confirmed_at</code>, <code>cancelled_at</code>, <code>cancellation_reason</code></td><td>timestamptz, timestamptz, text</td><td>Terminal-state audit columns.</td></tr>
+            <tr><td><code>created_at</code>, <code>updated_at</code></td><td>timestamptz</td><td>Audit timestamps.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="caption">Primary key <code>(flight_id, departure_date, booking_id)</code>. <code>ck_bookings_pending_has_hold</code> makes a hold without an expiry impossible. <code>ck_bookings_seat_upper</code> normalises seat numbers.</p>
+
+      <p><strong>Indexes and the guarantees they carry.</strong></p>
+      <ul>
+        <li><code>uq_booking_reference (flight_id, departure_date, booking_reference)</code> — uniqueness within a flight and date. A globally unique index would have to contain the distribution column, so global uniqueness is checked by the generator across a scatter read and backed by this local index.</li>
+        <li><code>uq_live_seat (flight_id, departure_date, seat_number) WHERE seat_number IS NOT NULL AND status IN ('PENDING','CONFIRMED')</code> — the hard no-double-book guarantee. Cancelled and expired rows drop out of the predicate and free the seat.</li>
+        <li><code>uq_booking_idempotency (flight_id, departure_date, idempotency_key) WHERE idempotency_key IS NOT NULL</code> — the database backstop against two concurrent retries inserting two bookings.</li>
+        <li><code>idx_bookings_hold_expiry (hold_expires_at) WHERE status = 'PENDING'</code> — the reaper scans only open holds.</li>
+      </ul>
+
+      <h4>payments</h4>
+      <p>One row per booking, carrying both the payment status and the saga step that produced it. The saga state is persisted so a process crash can be reconciled later rather than guessed at.</p>
+
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th class="col-name">Column</th><th class="col-type">Type</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr><td><code>payment_id</code></td><td>uuid</td><td>Default <code>app_uuidv7()</code>.</td></tr>
+            <tr><td><code>flight_id</code>, <code>departure_date</code>, <code>booking_id</code></td><td>uuid, date, uuid</td><td>Distribution key, partition key and booking link.</td></tr>
+            <tr><td><code>amount</code>, <code>currency</code></td><td>numeric(10,2), text</td><td><code>CHECK &gt;= 0</code>.</td></tr>
+            <tr><td><code>provider</code></td><td>text</td><td>Default <code>SIMULATED</code>.</td></tr>
+            <tr><td><code>status</code></td><td>text</td><td><code>PENDING</code>, <code>AUTHORIZED</code>, <code>CAPTURED</code>, <code>FAILED</code>, <code>REFUNDED</code>.</td></tr>
+            <tr><td><code>saga_state</code></td><td>text</td><td><code>RESERVED</code>, <code>AUTHORIZING</code>, <code>AUTHORIZED</code>, <code>CAPTURING</code>, <code>CAPTURED</code>, <code>CONFIRMED</code>, <code>COMPENSATING</code>, <code>COMPENSATED</code>, <code>FAILED</code>.</td></tr>
+            <tr><td><code>failure_reason</code>, <code>provider_reference</code>, <code>idempotency_key</code></td><td>text</td><td>Gateway outcome and request correlation.</td></tr>
+            <tr><td><code>authorized_at</code>, <code>captured_at</code>, <code>refunded_at</code></td><td>timestamptz</td><td>Step timestamps.</td></tr>
+            <tr><td><code>created_at</code>, <code>updated_at</code></td><td>timestamptz</td><td>Audit timestamps.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="caption">Primary key <code>(flight_id, departure_date, payment_id)</code>. <code>uq_payments_booking UNIQUE (flight_id, departure_date, booking_id)</code> enforces one payment per booking.</p>
+
+      <h4>booking_outbox</h4>
+      <p>The transactional outbox. A row is written in the same transaction as the state change it describes, so there is no window in which a committed booking has no corresponding event.</p>
+
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th class="col-name">Column</th><th class="col-type">Type</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr><td><code>flight_id</code>, <code>departure_date</code>, <code>event_id</code></td><td>uuid, date, uuid</td><td>Primary key; distribution and partition keys included.</td></tr>
+            <tr><td><code>event_type</code></td><td>text</td><td><code>BOOKING_RESERVED</code>, <code>BOOKING_CONFIRMED</code>, <code>BOOKING_CANCELLED</code>, <code>BOOKING_EXPIRED</code>, <code>INVENTORY_CHANGED</code>, <code>FLIGHT_UPSERTED</code>.</td></tr>
+            <tr><td><code>aggregate_id</code></td><td>uuid</td><td>The booking or flight the event is about.</td></tr>
+            <tr><td><code>user_id</code></td><td>uuid</td><td>Nullable; present on booking events.</td></tr>
+            <tr><td><code>payload</code></td><td>jsonb</td><td>Denormalised snapshot: booking facts, flight facts and the cabin counter. Projection needs no join back into the write model.</td></tr>
+            <tr><td><code>published</code></td><td>boolean</td><td>Set only after the projection commits.</td></tr>
+            <tr><td><code>attempts</code>, <code>last_error</code></td><td>integer, text</td><td>Failure accounting; a climbing attempt count exposes poison events.</td></tr>
+            <tr><td><code>created_at</code>, <code>published_at</code></td><td>timestamptz</td><td>Event time and delivery time.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="caption">Partial index <code>idx_outbox_unpublished (created_at) WHERE published = false</code> keeps the poller's scan small regardless of how much history the table holds.</p>
+
+      <h3>3.4 The per-user projection and read model</h3>
+
+      <h4>user_bookings</h4>
+      <p>Bookings are sharded by flight, so "my bookings" would require a scatter across every flight shard. This table is sharded by <code>user_id</code> instead, so the query reads exactly one shard. Every field is a copy projected from a booking that already committed elsewhere.</p>
+
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th class="col-name">Column</th><th class="col-type">Type</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr><td><code>user_id</code>, <code>booking_id</code></td><td>uuid, uuid</td><td>Primary key; <code>user_id</code> is the distribution key.</td></tr>
+            <tr><td><code>flight_id</code>, <code>departure_date</code></td><td>uuid, date</td><td>Link back to the authoritative booking and flight.</td></tr>
+            <tr><td><code>booking_reference</code>, <code>status</code>, <code>cabin</code>, <code>seat_number</code></td><td>text, text, text, text</td><td>Booking facts as of the latest projected event.</td></tr>
+            <tr><td><code>passenger_name</code>, <code>origin</code>, <code>destination</code>, <code>flight_number</code>, <code>airline_code</code>, <code>departure_time</code></td><td>text / timestamptz</td><td>Denormalised flight facts, so the list needs no join.</td></tr>
+            <tr><td><code>price</code>, <code>currency</code></td><td>numeric(10,2), text</td><td>Price snapshot.</td></tr>
+            <tr><td><code>booking_created_at</code></td><td>timestamptz</td><td>Ordering key for the list.</td></tr>
+            <tr><td><code>last_event_at</code></td><td>timestamptz</td><td>Guard: an older event cannot overwrite a newer projection.</td></tr>
+            <tr><td><code>updated_at</code></td><td>timestamptz</td><td>Projection update time.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h4>flight_availability</h4>
+      <p>The denormalised search row. Its primary key is the search access path: route, date, flight and cabin. It lives in a separate database and is written only by the projector.</p>
+
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th class="col-name">Column</th><th class="col-type">Type</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr><td><code>origin</code>, <code>destination</code>, <code>departure_date</code>, <code>flight_id</code>, <code>cabin</code></td><td>text, text, date, uuid, text</td><td>Primary key.</td></tr>
+            <tr><td><code>flight_number</code>, <code>airline_code</code>, <code>aircraft_type</code></td><td>text</td><td>Display facts.</td></tr>
+            <tr><td><code>departure_time</code>, <code>arrival_time</code></td><td>timestamptz</td><td>Schedule facts.</td></tr>
+            <tr><td><code>total_seats</code>, <code>available_seats</code>, <code>held_seats</code></td><td>integer</td><td>Counter snapshot aggregated across inventory shards.</td></tr>
+            <tr><td><code>price</code>, <code>currency</code></td><td>numeric(10,2), text</td><td>Derived cabin price.</td></tr>
+            <tr><td><code>status</code></td><td>text</td><td>Flight status snapshot.</td></tr>
+            <tr><td><code>source_version</code></td><td>bigint</td><td>The write-model counter version this row came from. The guarded upsert refuses anything older.</td></tr>
+            <tr><td><code>updated_at</code></td><td>timestamptz</td><td>Projection update time.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="caption">Indexes: <code>(origin, destination, departure_date, available_seats)</code> for the search path; <code>(departure_time)</code>; <code>(flight_id, departure_date)</code> for targeted reprojection.</p>
+
+      <h3>3.5 Reference and bookkeeping tables</h3>
+
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th style="width:24%">Table</th><th>Columns and role</th></tr></thead>
+          <tbody>
+            <tr><td><code>airlines</code></td><td><code>code</code> PK, <code>name</code>, <code>country</code>, <code>is_active</code>, timestamps. Eight seed airlines, extended with five East Asian carriers.</td></tr>
+            <tr><td><code>airports</code></td><td><code>code</code> PK, <code>name</code>, <code>city</code>, <code>country</code>, <code>tz</code>, <code>region</code>, timestamps. Nine seed airports plus five East Asian ones.</td></tr>
+            <tr><td><code>cabins</code></td><td><code>code</code> PK, <code>name</code>, <code>rank</code>. Four cabins, ordered by rank.</td></tr>
+            <tr><td><code>aircraft_types</code></td><td><code>code</code> PK, <code>name</code>, <code>manufacturer</code>. Six types: A320, A321, B737, B777, B787, ATR72.</td></tr>
+            <tr><td><code>seat_map_templates</code></td><td><code>(aircraft_type, cabin, seat_number)</code> PK, <code>seat_position</code> (WINDOW/MIDDLE/AISLE), <code>is_exit_row</code>. A template per aircraft type, not per flight. Generated from the seed seat maps, including exit rows 12–13.</td></tr>
+            <tr><td><code>users</code></td><td><code>id</code> uuid PK, <code>email</code> unique and lowercase-enforced, <code>password_hash</code>, <code>role</code> (PASSENGER/AGENT/ADMIN), <code>full_name</code>, <code>phone</code>, <code>is_active</code>, <code>last_login_at</code>, <code>region</code>, timestamps. Reference table so auth is a local join.</td></tr>
+            <tr><td><code>regions</code></td><td><code>code</code> PK, <code>name</code>, <code>created_at</code>. Five regions. Added in migration 012 as a coordinator-local lookup, with no foreign keys from distributed tables.</td></tr>
+            <tr><td><code>refresh_tokens</code></td><td><code>(user_id, token_id)</code> PK, <code>family_id</code>, <code>issued_at</code>, <code>expires_at</code>, <code>revoked_at</code>, <code>replaced_by</code>, <code>user_agent</code>, <code>ip</code>. Distributed by <code>user_id</code>, co-located with <code>user_bookings</code>. Indexes on <code>(user_id, family_id)</code> and partial <code>(expires_at) WHERE revoked_at IS NULL</code>.</td></tr>
+            <tr><td><code>projection_state</code></td><td><code>projection</code> PK, <code>last_event_at</code>, <code>last_event_id</code>, <code>updated_at</code>. The watermark that makes lag measurable without scanning the data.</td></tr>
+            <tr><td><code>schema_migrations</code></td><td><code>version</code> PK, <code>name</code>, <code>checksum</code>, <code>applied_at</code>, <code>execution_ms</code>. One per target database; the checksum turns an edited migration into reported drift.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>3.6 Partitioning on top of distribution</h3>
+
+      <p>Every large write-model table and the read-model availability table is also range-partitioned by month on <code>departure_date</code>. Distribution and partitioning solve different problems and the design uses both:</p>
+
+      <div class="two-col">
+        <div class="panel">
+          <h4>Hash distribution</h4>
+          <p>Decides <em>which worker</em> owns a row. Hash of <code>flight_id</code> or <code>user_id</code>, 32 shards by default, placed across the workers.</p>
+        </div>
+        <div class="panel">
+          <h4>Range partitioning</h4>
+          <p>Decides <em>which physical table</em> owns a row. One partition per calendar month of <code>departure_date</code>. Old months are dropped as partitions, not deleted row by row.</p>
+        </div>
+      </div>
+
+      <p>Two SQL helpers in migration 001 do the maintenance work: <code>app_ensure_month_partitions(parent, months_behind, months_ahead)</code> creates the missing monthly partitions, and <code>app_drop_partitions_older_than(parent, months)</code> removes expired ones. Migration 007 creates the initial window; <code>src/db/partitions.js</code> plans the window, detects gaps, creates missing partitions, drops old ones behind a row-count guard and a dry-run option, and serialises the whole operation under an advisory lock so two maintenance jobs cannot race.</p>
+
+      <p>Partition pruning is only useful if queries carry the partition key. This design makes that true by construction: a booking always knows its <code>departure_date</code>, <code>findById</code> takes both key parts, the inventory update names both, and the outbox publisher marks an event by <code>(flight_id, departure_date, event_id)</code>. A query that omits the date can still run, but it scans every partition; the code avoids that on every hot path.</p>
+
+      <div class="callout warn">
+        <span class="k">Consequence worth stating in a presentation</span>
+        <p>Citus gives each partition its own set of shards. A table with 32 hash shards and 26 monthly partitions has 832 shard placements for that table alone. This is normal for distributed PostgreSQL, but it is why shard counts and partition horizons are capacity decisions, not free knobs.</p>
+      </div>
+
+      <h3>3.7 Time-ordered identifiers</h3>
+
+      <p>Primary keys default to UUIDv7, either the native <code>uuidv7()</code> where the server provides it or a PL/pgSQL fallback that builds a 48-bit millisecond timestamp, a version nibble and an RFC 4122 variant. Time-ordered keys insert at the right edge of the B-tree instead of scattering across it the way random v4 keys do. At tens of millions of rows that is the difference between a healthy index and constant page splits. The same generator is used for booking, payment and event identifiers.</p>
+
+      <h3>3.8 Logical relationships</h3>
+
+      <p>The schema uses no foreign keys between distributed tables. Relationships are logical, enforced by the write path and checked by the audit. This avoids cross-shard foreign-key checks and keeps every write local.</p>
+
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th style="width:36%">Relationship</th><th style="width:34%">Join key</th><th>Cardinality</th></tr></thead>
+          <tbody>
+            <tr><td><code>flights</code> → <code>flight_inventory</code></td><td><code>(flight_id, departure_date)</code></td><td>1 : N cabins × counter shards</td></tr>
+            <tr><td><code>flights</code> → <code>bookings</code></td><td><code>(flight_id, departure_date)</code></td><td>1 : N</td></tr>
+            <tr><td><code>bookings</code> → <code>payments</code></td><td><code>(flight_id, departure_date, booking_id)</code></td><td>1 : 1</td></tr>
+            <tr><td><code>bookings</code> → <code>booking_outbox</code></td><td><code>aggregate_id</code>, scoped by flight and date</td><td>1 : N events</td></tr>
+            <tr><td><code>bookings</code> → <code>user_bookings</code></td><td><code>booking_id</code>, projected by <code>user_id</code></td><td>1 : 1, asynchronous</td></tr>
+            <tr><td><code>flights</code> → <code>flight_availability</code></td><td><code>flight_id</code>, <code>departure_date</code></td><td>1 : N cabins, asynchronous</td></tr>
+            <tr><td><code>users</code> → <code>refresh_tokens</code></td><td><code>user_id</code></td><td>1 : N token rows</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="distribution">
+      <div class="sec-head"><span class="sec-num">04</span><h2>How this demonstrates a distributed database</h2></div>
+
+      <p class="lede">Citus keeps the PostgreSQL interface and adds a coordinator, shard placement and distributed query planning underneath it. The application still writes SQL; the difference is that each statement may be routed to one worker or fanned out to many. This project uses five mechanisms deliberately, and each one is visible in the schema and the code.</p>
+
+      <h3>4.1 Horizontal fragmentation by flight_id</h3>
+
+      <p><code>flights</code> is distributed on <code>flight_id</code> with 32 hash shards. Every row belongs to exactly one shard; every shard belongs to one worker. The mapping is not in application code. It lives in the Citus catalogs: <code>pg_dist_node</code> for workers, <code>pg_dist_partition</code> for the distribution column, <code>pg_dist_shard</code> for shard ranges and <code>pg_dist_placement</code> for shard-to-node placement.</p>
+
+      <pre><code><span class="c">-- db/migrations/003-flights-and-inventory.js</span>
+SELECT create_distributed_table(<span class="st">'flights'</span>, <span class="st">'flight_id'</span>, shard_count =&gt; <span class="nm">32</span>);
+
+<span class="c">-- Same distribution column, same shard count: the same colocation group.</span>
+SELECT create_distributed_table(<span class="st">'bookings'</span>, <span class="st">'flight_id'</span>, colocate_with =&gt; <span class="st">'flights'</span>);</code></pre>
+
+      <p><code>src/db/citus.js</code> reads those catalogs to produce a topology report: coordinator, workers, shard count, distribution column and co-location groups. The health endpoint exposes the capability block, and the admin topology endpoint exposes the fuller report. This is how the running system can answer "which of these am I talking to?" without opening a psql session.</p>
+
+      <h3>4.2 Co-location makes the booking transaction local</h3>
+
+      <p>This is the central design decision. <code>flights</code>, <code>flight_inventory</code>, <code>bookings</code>, <code>payments</code> and <code>booking_outbox</code> all distribute on <code>flight_id</code> and all specify <code>colocate_with => 'flights'</code>. The same <code>flight_id</code> therefore hashes to the same shard, and every table in the group puts that shard on the same worker.</p>
+
+      <p>A booking creates five writes in one transaction:</p>
+
+      <ol class="steps">
+        <li><span class="st">Statement 1 · flight_inventory</span><b>Decrement the counter and increment the hold.</b> One row, one shard.</li>
+        <li><span class="st">Statement 2 · bookings</span><b>Insert the PENDING booking.</b> Co-located with the counter, so the same shard.</li>
+        <li><span class="st">Statement 3 · payments</span><b>Insert the PENDING payment with saga state RESERVED.</b> Same shard.</li>
+        <li><span class="st">Statement 4 · booking_outbox</span><b>Insert BOOKING_RESERVED.</b> Same shard.</li>
+        <li><span class="st">Statement 5 · booking_outbox</span><b>Insert INVENTORY_CHANGED with the new counter snapshot.</b> Same shard.</li>
+      </ol>
+
+      <p>Because all five rows share the distribution key, the coordinator sends one transaction to one worker. That worker runs an ordinary local PostgreSQL transaction. If any statement fails, the rollback is local and complete: no seat is held, no booking exists, no event exists. There is no two-phase commit, no distributed deadlock across workers and no window in which half the writes are visible.</p>
+
+      <div class="callout">
+        <span class="k">The trade-off, stated plainly</span>
+        <p>Co-location is what removes the distributed commit, and it also constrains the schema. Every unique constraint has to contain <code>flight_id</code>, and a transaction cannot touch two flights. The system is designed so that it never needs to: one booking is one flight.</p>
+      </div>
+
+      <h3>4.3 Reference tables keep dimension joins local</h3>
+
+      <p>Dimensions are small, read-mostly and joined by almost every query. Replicating them in full is cheaper than shipping rows between workers. Migration 008 promotes <code>airlines</code>, <code>airports</code>, <code>cabins</code>, <code>aircraft_types</code>, <code>seat_map_templates</code> and <code>users</code> to Citus reference tables.</p>
+
+      <p>The consequence is that a query such as "find this flight, then look up its cabin price and airport names" can join the distributed fact row to the reference rows on the same worker. The coordinator does not need to gather dimension rows from another node. The price of this choice is that every write to a reference table is replicated to every worker, which is why the set is limited to small, slowly changing data.</p>
+
+      <h3>4.4 A second distribution key, on purpose</h3>
+
+      <p>Bookings are distributed by <code>flight_id</code> because that is what keeps a booking transaction local. But the question "show me my bookings" is asked by <code>user_id</code>, and answering it against <code>bookings</code> would fan out to every flight shard. No single distribution key serves both access paths well.</p>
+
+      <p>The design resolves this with a second table, <code>user_bookings</code>, distributed by <code>user_id</code> and co-located with <code>refresh_tokens</code>. It is a projection, not a second source of truth. The write path never touches it. The outbox projector maintains it, and a guarded upsert makes replay safe. The same split appears in <code>refresh_tokens</code>: token rotation is a per-user transaction that needs no 2PC because the rows are co-located by <code>user_id</code>.</p>
+
+      <div class="callout warn">
+        <span class="k">What this demonstrates</span>
+        <p>In a distributed database, the physical key is chosen per access path, not per entity. The same business object can have an authoritative row in one distribution group and a denormalised index in another, as long as the system states which one is authoritative and how the copy is repaired.</p>
+      </div>
+
+      <h3>4.5 Two-dimensional placement: hash and range</h3>
+
+      <p>The tables are distributed and partitioned. Hash placement answers "which worker"; range partitioning answers "which physical table". A query for one flight on one date is routed to one shard and prunes to one monthly partition. A query for a route across a month touches one partition per shard, which is still bounded.</p>
+
+      <p>Partitioning also gives the system a cheap retention policy: dropping a departed month is a metadata operation, not a delete of millions of rows. The maintenance job keeps six months ahead of today, one month behind, and retains 24 months by default. It refuses to drop a partition that still contains rows unless explicitly allowed, which prevents a misconfigured retention window from erasing live data.</p>
+
+      <h3>4.6 Single-shard routing versus scatter-gather</h3>
+
+      <p>Not every query can carry the distribution key. The design is explicit about which is which.</p>
+
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th style="width:30%">Access path</th><th style="width:20%">Routing</th><th>Why</th></tr></thead>
+          <tbody>
+            <tr><td><code>flightRepository.findById</code></td><td>single shard</td><td>Takes <code>flight_id</code> and <code>departure_date</code>.</td></tr>
+            <tr><td><code>inventoryRepository.reserve / confirm / release / reclaim</code></td><td>single shard</td><td>All four key parts are known, including <code>inventory_shard</code>.</td></tr>
+            <tr><td><code>bookingRepository.findById</code></td><td>single shard</td><td>Flight and date are supplied by the caller.</td></tr>
+            <tr><td><code>outboxRepository.markPublished</code></td><td>single shard</td><td>Scoped by flight, date and event id.</td></tr>
+            <tr><td><code>bookingRepository.findAnyById</code></td><td>scatter-gather</td><td>Only the booking id is known; the coordinator probes every shard.</td></tr>
+            <tr><td><code>bookingRepository.findByReference</code></td><td>scatter-gather</td><td>Reference is unique per flight, not a distribution key.</td></tr>
+            <tr><td><code>bookingRepository.findExpiredHolds</code></td><td>bounded scatter</td><td>Background reaper; bounded by <code>departureDateFrom</code> and a batch limit.</td></tr>
+            <tr><td><code>outboxRepository.listPending</code></td><td>scatter</td><td>The projector consumes the whole backlog; each event is then written single-shard.</td></tr>
+            <tr><td><code>flightRepository.listByRoute</code></td><td>scatter</td><td>Route is not the distribution key; used by the write-model flight list, not by search.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>The hot paths always carry the key. Scatter-gather is reserved for background work and for lookups where the client genuinely does not know the flight. Search does not touch these shards at all; it reads the separate read model.</p>
+
+      <h3>4.7 Distributed-schema rules the design had to obey</h3>
+
+      <ul>
+        <li><strong>Unique constraints must include the distribution column.</strong> This explains the composite primary keys, the per-flight booking-reference index and the per-flight idempotency index. A globally unique index would require a coordinator-level check or a different distribution strategy.</li>
+        <li><strong>Foreign keys are not used between distributed tables.</strong> Relationships are logical and enforced by the write path. <code>regions</code> is deliberately a plain lookup with no foreign key from distributed tables, as migration 012 documents.</li>
+        <li><strong>Citus rejects DDL inside a distributed transaction.</strong> Migrations that distribute or alter distributed tables declare <code>transactional: false</code>, and every statement is individually idempotent so a partial run can be re-run safely.</li>
+        <li><strong>Nullable columns can be added without a rewrite.</strong> Migration 012 adds <code>region</code> to five tables as a nullable column with no default, so it is a metadata-only change even on large tables.</li>
+        <li><strong>Dates must not shift.</strong> The pool parses PostgreSQL <code>DATE</code> as a string. The default parser builds a local-midnight JavaScript date, which can render as the previous day in UTC. Since <code>departure_date</code> is a partition key and part of every primary key, a one-day shift is a lookup that misses the row it just wrote.</li>
+      </ul>
+
+      <h3>4.8 Topology convergence and worker failure</h3>
+
+      <p><code>scripts/citus-init.js</code> converges a cluster to the intended topology rather than assuming it. It can add a worker, verify the existing placement or run a dry run, and it checks the properties the rest of the design depends on:</p>
+
+      <ul>
+        <li>the five booking tables use <code>flight_id</code>, have one co-location group and are actually distributed;</li>
+        <li><code>user_bookings</code> uses <code>user_id</code>;</li>
+        <li>the flight group and the user group are distinct co-location groups;</li>
+        <li>the six reference tables are reference tables;</li>
+        <li>every worker is reachable.</li>
+      </ul>
+
+      <p>The script exits 0 for converged, 1 for a failed check and 2 for a usage error, which makes it usable as a deployment gate. The integration test <code>tests/integration/topology.test.js</code> asserts the same properties from the test suite, including the opt-in <code>CITUS_CHAOS=1</code> case that disables a worker and checks that the cluster remains available for the shards it still holds.</p>
+    </section>
+
+    <section id="concurrency">
+      <div class="sec-head"><span class="sec-num">05</span><h2>Concurrency control and the invariants</h2></div>
+
+      <p class="lede">The distributed design decides where the data lives. The concurrency design decides what happens when two requests arrive at the same row at the same time. In this system that is one SQL statement, backed by constraints and an audit.</p>
+
+      <h3>5.1 The anti-oversell statement</h3>
+
+      <pre><code><span class="kw">UPDATE</span> flight_inventory
+   <span class="kw">SET</span> available_seats = available_seats - $5,
+       held_seats      = held_seats + $5,
+       version         = version + <span class="nm">1</span>,
+       updated_at      = now()
+ <span class="kw">WHERE</span> flight_id      = $1
+   <span class="kw">AND</span> departure_date = $2
+   <span class="kw">AND</span> cabin          = $3
+   <span class="kw">AND</span> shard_no       = $4
+   <span class="kw">AND</span> available_seats &gt;= $5
+   <span class="kw">AND</span> ($6::bigint <span class="kw">IS NULL OR</span> version = $6)
+<span class="kw">RETURNING</span> flight_id, departure_date, cabin, shard_no,
+          total_seats, available_seats, held_seats, version, updated_at;</code></pre>
+
+      <p>PostgreSQL takes a row lock for the update. A concurrent writer waits, and when it acquires the lock the predicate is re-evaluated against the committed row. If the first buyer took the last seat, the second buyer's <code>available_seats &gt;= 1</code> is now false, the statement updates zero rows, and the service returns <code>SOLD_OUT</code>. There is no read-then-write window in which a lost update can hide, which is why the code does not use <code>SELECT ... FOR UPDATE</code> followed by an <code>UPDATE</code>: two statements would add a round trip and an interval the database does not need.</p>
+
+      <p>A zero-row result is an expected business outcome, not an exception. The repository then performs an advisory read to distinguish three causes: no inventory row, sold out, or an optimistic version conflict. That read never decides whether the sale happened; the <code>UPDATE</code> already did.</p>
+
+      <h3>5.2 The accounting model</h3>
+
+      <p>Each cabin counter has three visible quantities: <code>total_seats</code>, <code>available_seats</code> and <code>held_seats</code>. Confirmed seats are derived, not stored: <code>total − available − held</code>. Every transition is a guarded statement.</p>
+
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th style="width:18%">Transition</th><th style="width:30%">Counter movement</th><th>Guard</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Reserve</strong></td><td><code>available − n</code>, <code>held + n</code></td><td><code>available &gt;= n</code>, optional <code>version = expected</code></td></tr>
+            <tr><td><strong>Confirm</strong></td><td><code>held − n</code>; confirmed grows by <code>n</code></td><td><code>held &gt;= n</code></td></tr>
+            <tr><td><strong>Release</strong></td><td><code>held − n</code>, <code>available + n</code></td><td><code>held &gt;= n</code></td></tr>
+            <tr><td><strong>Reclaim</strong></td><td><code>available + n</code>; confirmed shrinks by <code>n</code></td><td><code>available + held + n &lt;= total</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>Two equalities are audited, not one inequality:</p>
+
+      <pre><code><span class="c">-- For every (flight, date, cabin):</span>
+held_seats                 = number of live PENDING bookings
+total_seats - available_seats - held_seats
+                           = number of CONFIRMED bookings</code></pre>
+
+      <p>The database <code>CHECK (available_seats + held_seats &lt;= total_seats)</code> prevents an over-capacity counter. It cannot detect drift between the counter and the bookings table, because each table is internally consistent while the two disagree. <code>inventoryRepository.audit</code> runs the two equalities in one local query and reports four violation types: <code>NEGATIVE_COUNTER</code>, <code>OVERCAPACITY</code>, <code>HELD_MISMATCH</code> and <code>CONFIRMED_MISMATCH</code>, each with the signed size of the difference.</p>
+
+      <h3>5.3 One live booking per physical seat</h3>
+
+      <p>Capacity and seat identity are separate resources. The counter protects the cabin; a partial unique index protects the seat:</p>
+
+      <pre><code><span class="kw">CREATE UNIQUE INDEX</span> uq_live_seat
+    <span class="kw">ON</span> bookings (flight_id, departure_date, seat_number)
+ <span class="kw">WHERE</span> seat_number <span class="kw">IS NOT NULL</span>
+   <span class="kw">AND</span> status <span class="kw">IN</span> (<span class="st">'PENDING'</span>, <span class="st">'CONFIRMED'</span>);</code></pre>
+
+      <p>The predicate is what makes the index a <em>live</em> seat index. Cancelled and expired rows leave the predicate and stop blocking the seat, without deleting history. A losing insert raises SQLSTATE 23505; the service translates the constraint name into <code>SEAT_UNAVAILABLE</code>, never a 500. Because the reservation and the failed insert are in one transaction, the loser's rollback returns its seat to the counter.</p>
+
+      <h3>5.4 Idempotency at two layers</h3>
+
+      <p>A retry is not an edge case in a distributed system; it is the normal response to an ambiguous timeout. The system uses two layers with different failure modes:</p>
+
+      <div class="two-col">
+        <div class="panel">
+          <h4>Redis claim and record</h4>
+          <p><code>SET NX</code> claims the key. The request hash is stored with the claim. A replay with the same body returns the stored response; a different body is a conflict; an in-flight duplicate waits briefly and then receives a 409 with a retry hint.</p>
+        </div>
+        <div class="panel">
+          <h4>Database partial unique index</h4>
+          <p><code>uq_booking_idempotency</code> on <code>(flight_id, departure_date, idempotency_key)</code>. If two requests race past the cache, one insert wins and the other is translated into a replay or a duplicate-booking error.</p>
+        </div>
+      </div>
+
+      <p>The cache is allowed to fail. Without Redis, the in-process driver still deduplicates within one API instance, and the database index still prevents two bookings for one key on the same flight. Correctness never depends on the cache being available, which is why the health endpoint reports the in-memory driver as a supported fallback rather than a failure.</p>
+
+      <p>Failure outcomes are durable too. A declined payment writes an error record against the idempotency key, so a retry sees the same decline instead of authorizing the card a second time. A rolled-back transaction releases the claim, so a retry can genuinely try again.</p>
+
+      <h3>5.5 Retrying the whole transaction</h3>
+
+      <p>Transient SQLSTATEs are retried around the entire transaction, never around the last statement. Replaying only the failed statement would re-run a reservation whose earlier attempt may already have committed, which is exactly how a counter drifts. The retry policy separates:</p>
+
+      <ul>
+        <li><strong>Retryable:</strong> serialization failure (40001), deadlock detected (40P01), connection loss and selected Citus node errors.</li>
+        <li><strong>Never retryable:</strong> unique and check violations, validation errors, not found, and application conflicts. Retrying these would repeat a decision the database has already made.</li>
+      </ul>
+
+      <p>Backoff is exponential with full jitter: four attempts by default, 15 ms initial delay, 200 ms ceiling. Full jitter matters when many clients retry the same hot flight; without it they resynchronise and hit the row in a thundering herd.</p>
+
+      <h3>5.6 Claim-based state transitions</h3>
+
+      <p>Status transitions are conditional updates that claim the row, not read-then-write sequences:</p>
+
+      <pre><code><span class="kw">UPDATE</span> bookings
+   <span class="kw">SET</span> status = <span class="st">'CONFIRMED'</span>, confirmed_at = now(), updated_at = now()
+ <span class="kw">WHERE</span> flight_id = $1 <span class="kw">AND</span> departure_date = $2 <span class="kw">AND</span> booking_id = $3
+   <span class="kw">AND</span> status = <span class="st">'PENDING'</span>
+<span class="kw">RETURNING</span> ...;</code></pre>
+
+      <p>The same pattern covers cancel and expire. <code>claimForCancel</code> accepts <code>PENDING</code> or <code>CONFIRMED</code> and returns <code>(confirmed_at IS NOT NULL) AS was_confirmed</code>, which tells the caller whether to release a hold or reclaim a sale. <code>claimForExpire</code> accepts only a <code>PENDING</code> booking whose <code>hold_expires_at</code> has passed.</p>
+
+      <p>This is how the confirm-versus-reaper race resolves. If the reaper expires the hold first, the confirm claim updates zero rows and the saga compensates. If the confirm wins, the reaper's claim updates zero rows and it leaves the booking alone. No lock is held across the payment call, and no process has to trust that the other one is not running.</p>
+
+      <h3>5.7 Invariant summary</h3>
+
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th style="width:34%">Invariant</th><th style="width:38%">Mechanism</th><th>Location</th></tr></thead>
+          <tbody>
+            <tr><td>No cabin oversell</td><td>Conditional <code>UPDATE</code> with <code>available_seats &gt;= n</code></td><td><code>inventoryRepository.reserve</code></td></tr>
+            <tr><td>No negative or over-capacity counter</td><td><code>inv_capacity</code> CHECK plus non-negative CHECKs</td><td>migration 003</td></tr>
+            <tr><td>No double-booked seat</td><td><code>uq_live_seat</code> partial unique index</td><td>migration 004</td></tr>
+            <tr><td>Counter matches bookings</td><td>Two audit equalities</td><td><code>inventoryRepository.audit</code></td></tr>
+            <tr><td>No duplicate booking on retry</td><td>Redis claim plus <code>uq_booking_idempotency</code></td><td><code>idempotencyService</code>, migration 004</td></tr>
+            <tr><td>One winner per state transition</td><td><code>claimForConfirm</code>, <code>claimForCancel</code>, <code>claimForExpire</code></td><td><code>bookingRepository</code></td></tr>
+            <tr><td>No partial booking</td><td>Five co-located writes in one local transaction</td><td><code>bookingService.runCreateSaga</code></td></tr>
+            <tr><td>No lost domain event</td><td>Outbox insert in the same transaction</td><td>migrations 004, <code>bookingService</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="saga">
+      <div class="sec-head"><span class="sec-num">06</span><h2>The booking saga</h2></div>
+
+      <p class="lede">A database transaction cannot be held open across a payment gateway. The system therefore splits the booking into a short local transaction, an external payment sequence and a second local transaction, and persists enough state that any step can be resumed or compensated.</p>
+
+      <h3>6.1 The sequence</h3>
+
+      <ol class="steps">
+        <li><span class="st">Transaction A · reserve</span><b>Hold the seat and write the intent.</b> Reserve inventory, insert the booking as <code>PENDING</code>, insert the payment as <code>PENDING / RESERVED</code>, and write <code>BOOKING_RESERVED</code> plus <code>INVENTORY_CHANGED</code> to the outbox. All five rows are one local transaction on one worker.</li>
+        <li><span class="st">Outside any transaction · authorize</span><b>Call the payment gateway.</b> Mark the payment <code>AUTHORIZING</code>, call the provider, mark it <code>AUTHORIZED</code> or failed. Holding no database transaction across a network call is deliberate: a slow gateway must not hold a row lock.</li>
+        <li><span class="st">Outside any transaction · capture</span><b>Capture the authorized amount.</b> Mark <code>CAPTURING</code>, capture, mark <code>CAPTURED</code>. If the hold expired while the gateway was working, the code refunds and compensates rather than confirming a seat it no longer owns.</li>
+        <li><span class="st">Transaction B · confirm</span><b>Convert the hold into a sale.</b> Claim the booking <code>PENDING → CONFIRMED</code>, consume the held seat, mark the payment <code>CONFIRMED</code>, and write <code>BOOKING_CONFIRMED</code> plus <code>INVENTORY_CHANGED</code>.</li>
+        <li><span class="st">Compensation · on failure</span><b>Undo in reverse order.</b> Refund or void outside the transaction, then claim the booking cancelled, release or reclaim the exact inventory row, mark the payment, and write <code>BOOKING_CANCELLED</code> plus <code>INVENTORY_CHANGED</code>.</li>
+      </ol>
+
+      <p>The persisted <code>payments.saga_state</code> is what makes the sequence recoverable. A crash after authorization leaves <code>AUTHORIZED</code> on disk; the reconciler can continue from there. A crash after capture leaves <code>CAPTURED</code> with a <code>PENDING</code> booking; the forward-recovery branch detects that combination and completes the confirmation instead of refunding a successful sale.</p>
+
+      <h3>6.2 Inline and asynchronous execution</h3>
+
+      <p>With <code>BOOKING_SAGA_INLINE=true</code> (the default), the request runs the whole saga and answers 201 with a confirmed booking. With it false, the request returns 202 after transaction A, and the saga reconciler drives the remaining steps. Both modes use the same <code>advanceSaga</code> function, which re-reads persisted state on every call and claims each transition conditionally. That is what makes the same code safe as the request path and as the recovery path.</p>
+
+      <p>The reconciler scans stale <code>PENDING</code> bookings and stuck payments. Compensation counts as a successful outcome, because the goal is a terminal, consistent state, not a confirmed sale at any cost.</p>
+
+      <h3>6.3 Hold expiry</h3>
+
+      <p>A hold that is never paid must not consume a seat forever. <code>BOOKING_HOLD_TTL_SECONDS</code> defaults to 600 seconds. The reaper scans open holds in batches, claims each one <code>PENDING → EXPIRED</code>, and only then releases the exact counter row recorded on the booking. It skips any payment that is already <code>CAPTURED</code>, because refunding a captured payment is the saga's job, not the reaper's.</p>
+
+      <p>The ordering matters. Claim first, release second. If the processes were reversed, a crash between the two would return a seat for a booking that is still live, and a later confirmation would consume a seat twice. Claiming first makes the state transition the decision point, and the release is safe to retry because <code>held_seats &gt;= count</code> makes a double release a no-op.</p>
+
+      <h3>6.4 Cancellation</h3>
+
+      <p>Cancellation is not one operation. If the booking was <code>PENDING</code>, its seat is held, so the correct action is <code>release</code>. If it was <code>CONFIRMED</code>, its seat has already left <code>held_seats</code>, so releasing would find nothing and silently leave the seat unsold. The cancel claim returns <code>was_confirmed</code> from <code>confirmed_at</code>, and the service chooses <code>reclaim</code> or <code>release</code> accordingly. A captured payment is refunded; an authorized one is voided; a pending one is simply failed.</p>
+
+      <div class="callout proof">
+        <span class="k">Why the saga belongs in a distributed-systems course</span>
+        <p>It is the standard alternative to a distributed transaction when one participant is external and cannot enlist. The project shows the two properties a saga needs to be trustworthy: every step is idempotent or conditionally claimed, and every intermediate state is persisted so recovery does not depend on the process that started the work.</p>
+      </div>
+    </section>
+
+    <section id="consistency">
+      <div class="sec-head"><span class="sec-num">07</span><h2>Consistency across stores</h2></div>
+
+      <p class="lede">The write model, the per-user index and the search database cannot be updated atomically without a distributed transaction across independent databases. The system accepts that, and replaces atomicity with a protocol that is recoverable, replay-safe and measurable.</p>
+
+      <h3>7.1 The dual-write problem</h3>
+
+      <p>Writing the booking and then writing the read model in the request path is fast until the process dies between the two. After that, the stores disagree and nothing records the gap. The system avoids dual writes entirely: the event is written to the outbox inside the same transaction as the state change, and a separate poller projects it. If the process dies after commit, the event is durable and will be projected. If it dies before commit, nothing happened at all.</p>
+
+      <h3>7.2 The outbox protocol</h3>
+
+      <pre><code><span class="c">-- Delivered by src/workers/outboxConsumer.js, one event per transaction.</span>
+<span class="kw">BEGIN</span>;
+  <span class="c">-- 1. project into user_bookings and/or flight_availability</span>
+  <span class="c">-- 2. only after that write commits:</span>
+  <span class="kw">UPDATE</span> booking_outbox
+     <span class="kw">SET</span> published = true, published_at = now()
+   <span class="kw">WHERE</span> flight_id = $1 <span class="kw">AND</span> departure_date = $2 <span class="kw">AND</span> event_id = $3;
+<span class="kw">COMMIT</span>;</code></pre>
+
+      <p>The ordering is <strong>project first, mark published second</strong>. A crash between the two replays the event, which is safe because every projection write is a guarded upsert. The opposite order would turn a crash into a permanently lost projection, silently. Between "may apply twice" and "may lose one", at-least-once with idempotent writes is the only recoverable choice.</p>
+
+      <p>Each event is projected in its own transaction, so one poison event cannot roll back the healthy events behind it. A failed event stays unpublished, its attempt count rises, and the poller applies an exponential cooldown. After the configured maximum it remains parked and visible rather than disappearing.</p>
+
+      <h3>7.3 Guarded upserts</h3>
+
+      <p>The read model stores the write-model counter version; the per-user projection stores the event time. Both writes refuse to move backwards:</p>
+
+      <pre><code><span class="kw">INSERT INTO</span> flight_availability (...)
+<span class="kw">VALUES</span> (...)
+<span class="kw">ON CONFLICT</span> (origin, destination, departure_date, flight_id, cabin)
+<span class="kw">DO UPDATE SET</span>
+  available_seats = <span class="kw">EXCLUDED</span>.available_seats,
+  held_seats      = <span class="kw">EXCLUDED</span>.held_seats,
+  source_version  = <span class="kw">EXCLUDED</span>.source_version,
+  updated_at      = now()
+<span class="kw">WHERE</span> flight_availability.source_version &lt;= <span class="kw">EXCLUDED</span>.source_version;</code></pre>
+
+      <p><code>user_bookings</code> uses the same shape with <code>last_event_at &lt;= EXCLUDED.last_event_at</code>. The comparison is <code>&lt;=</code>, not <code>&lt;</code>, so an identical replay is a no-op rather than an error. A late batch delivered out of order changes nothing.</p>
+
+      <h3>7.4 Lag is measured and surfaced</h3>
+
+      <p>The projector updates <code>projection_state.last_event_at</code> with a <code>GREATEST</code> guard, so a replayed old event cannot rewind the watermark. Search responses carry <code>x-read-model-lag-ms</code>, the API returns a <code>freshness</code> block with <code>lagSeconds</code>, and <code>READMODEL_LAG_SLA_SECONDS</code> (60 seconds by default) defines when the projection is considered stale. Prometheus exposes <code>airline_outbox_pending_events</code>, <code>airline_outbox_lag_seconds</code> and <code>airline_read_model_lag_seconds</code>.</p>
+
+      <p>Surfacing lag is a design position, not a diagnostic afterthought. A read model that is allowed to lag must tell its readers how far behind it is, or the first stale search result becomes a correctness argument.</p>
+
+      <h3>7.5 The consistency contract</h3>
+
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th style="width:26%">Read or write</th><th style="width:22%">Consistency</th><th>What that means</th></tr></thead>
+          <tbody>
+            <tr><td>Booking create, confirm, cancel</td><td><strong>Strong, single shard</strong></td><td>One local ACID transaction. A committed booking and its counter change are visible together.</td></tr>
+            <tr><td>Availability for a known flight</td><td><strong>Strong</strong></td><td>Read from the write model, not the projection. This is the number to trust before booking.</td></tr>
+            <tr><td>Flight search</td><td><strong>Eventual</strong></td><td>Read from the read model. Lag is reported in the response header and body.</td></tr>
+            <tr><td>My bookings</td><td><strong>Eventual, monotonic</strong></td><td>Read from <code>user_bookings</code>. Guarded upserts prevent an older event from reverting a newer state.</td></tr>
+            <tr><td>Payment state</td><td><strong>Saga-consistent</strong></td><td>Not atomic with the booking. Persisted state and the reconciler drive it to a terminal outcome.</td></tr>
+            <tr><td>Topology and health</td><td><strong>Best effort</strong></td><td>Probes report reachability and capability; they are not a consensus view of the cluster.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>7.6 Rebuilding what can lag</h3>
+
+      <p>Because the read model is derived, it can be repaired. <code>projectionService.reprojectAvailability</code> replays outbox history, optionally for specific flights, and optionally deletes the affected rows first so a rebuild can remove a row that should no longer exist. <code>reprojectUser</code> rebuilds one user's index directly from the authoritative booking table. The operational scripts expose both behind <code>npm run readmodel:reproject</code>. This is the practical meaning of "derived": if it is wrong, replay history rather than patch it.</p>
+    </section>
+
+    <section id="paths">
+      <div class="sec-head"><span class="sec-num">08</span><h2>End-to-end request paths</h2></div>
+
+      <h3>8.1 Creating a booking</h3>
+
+      <ol class="steps">
+        <li><span class="st">HTTP</span><b>Validate the request and resolve the flight.</b> The API normalises cabin and seat, checks the flight is not cancelled or departed, and loads cabin metadata. These reads happen outside the write transaction to keep it short.</li>
+        <li><span class="st">Idempotency</span><b>Claim the key if one was supplied.</b> A replay returns the stored response with status 200; an identical request still in flight returns 409 with a retry hint; a different body under the same key is a conflict.</li>
+        <li><span class="st">Transaction A</span><b>Reserve, insert booking, insert payment, write two outbox events.</b> One checked-out client, one worker, one local transaction, retried as a whole on transient failure.</li>
+        <li><span class="st">Payment</span><b>Authorize and capture outside the transaction.</b> Failure injects a durable declined outcome and starts compensation.</li>
+        <li><span class="st">Transaction B</span><b>Confirm the booking and consume the hold.</b> Claim <code>PENDING → CONFIRMED</code>, decrement <code>held_seats</code>, mark the payment captured, write the confirmation events.</li>
+        <li><span class="st">Response</span><b>201 with the booking, or 202 when the saga is deferred.</b> The response carries the node id, and the idempotency record is completed with the result.</li>
+        <li><span class="st">Asynchronously</span><b>The projector drains the outbox.</b> Search and <code>user_bookings</code> catch up; lag is visible until they do.</li>
+      </ol>
+
+      <h3>8.2 Searching for flights</h3>
+
+      <p>Search reads <code>flight_availability</code> from the read database, or from <code>READMODEL_READ_URL</code> when a replica is configured. One SQL statement uses three CTEs: <code>matched</code> applies the route, date and filter predicates; <code>page</code> applies ordering and pagination; <code>total</code> returns the count. A <code>LEFT JOIN LATERAL</code> aggregates the cabin rows into a JSON array, so one flight returns one result object with all its cabins rather than one row per cabin. The response carries freshness metadata derived from the projection watermark.</p>
+
+      <p>The query is indexed by <code>(origin, destination, departure_date, available_seats)</code>. It does not touch the Citus write cluster at all, which is the point: search traffic cannot contend with booking traffic.</p>
+
+      <h3>8.3 The seat map</h3>
+
+      <p>Seats are derived, never materialised per flight. The aircraft type selects a template from <code>seat_map_templates</code>; the live seat numbers for that flight are read from <code>bookings</code> where the status is <code>PENDING</code> or <code>CONFIRMED</code>; the two are left-joined and returned by cabin. A 180-seat aircraft returns 180 rows for that flight regardless of how many flights exist in the system. The template also supplies window, middle, aisle and exit-row metadata, so the seat map is a rendering concern rather than a storage one.</p>
+
+      <h3>8.4 Health and readiness</h3>
+
+      <p>Three probes answer three different questions. <strong>Liveness</strong> never touches a dependency, so a database outage cannot make an orchestrator kill a healthy process. <strong>Readiness</strong> checks both models and fails with 503 while either is unreachable, which removes the instance from the load balancer. <strong>Health</strong> is the full report: reachability, latency, Redis driver, Citus capability and topology. The read model being down produces <code>DEGRADED</code>, not <code>DOWN</code>, because booking still works; calling that state DOWN would take a node out of service for a dependency it does not need in order to sell a seat.</p>
+    </section>
+
+    <section id="operations">
+      <div class="sec-head"><span class="sec-num">09</span><h2>Operations at scale</h2></div>
+
+      <h3>9.1 Migrations</h3>
+
+      <p>Migrations are plain JavaScript modules that receive a checked-out client, so they can branch on whether Citus is present. Each target database keeps its own <code>schema_migrations</code> table with a SHA-256 checksum of the migration source. Editing an applied migration is reported as drift instead of being silently ignored. Transactional migrations roll back completely on failure; non-transactional ones are written to be idempotent, which is what makes a partially applied Citus DDL step safe to re-run.</p>
+
+      <h3>9.2 Partition maintenance</h3>
+
+      <p><code>npm run partitions:maintain</code> creates upcoming monthly partitions and drops months past retention. It runs under an advisory lock, supports a dry run, refuses to drop a partition containing rows unless explicitly allowed, and can detach instead of drop. The operation is idempotent and reports the plan before acting.</p>
+
+      <h3>9.3 Observability</h3>
+
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th style="width:38%">Signal</th><th>What it tells you</th></tr></thead>
+          <tbody>
+            <tr><td><code>airline_bookings_total</code></td><td>Booking outcomes by status and result.</td></tr>
+            <tr><td><code>airline_booking_saga_steps_total</code></td><td>How far sagas get, and where they fail.</td></tr>
+            <tr><td><code>airline_inventory_reservations_total</code></td><td>Reserve outcomes by cabin: reserved, sold out, no inventory.</td></tr>
+            <tr><td><code>airline_inventory_available_seats</code></td><td>Remaining capacity gauge.</td></tr>
+            <tr><td><code>airline_outbox_pending_events</code></td><td>Projection backlog.</td></tr>
+            <tr><td><code>airline_outbox_lag_seconds</code></td><td>Age of the oldest unpublished event.</td></tr>
+            <tr><td><code>airline_read_model_lag_seconds</code></td><td>Staleness of the search projection.</td></tr>
+            <tr><td><code>airline_reaper_expired_bookings_total</code></td><td>Holds reclaimed by expiry.</td></tr>
+            <tr><td><code>airline_db_query_duration_ms</code>, <code>airline_db_errors_total</code></td><td>Database latency and error classes.</td></tr>
+            <tr><td><code>airline_http_requests_total</code>, <code>airline_http_request_duration_ms</code></td><td>API traffic and latency.</td></tr>
+            <tr><td><code>airline_active_holds</code></td><td>Seats currently held but not sold.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>Logs are structured and carry the node id, transaction id, flight id and operation. Responses carry <code>x-node-id</code> for request tracing and <code>x-read-model-lag-ms</code> for freshness. The health and admin endpoints expose the Citus topology, so a dashboard can show the same shard and co-location facts the planner uses.</p>
+
+      <h3>9.4 Bulk loading</h3>
+
+      <p>The Python loaders implement the volume path: users, flights with inventory, then the read model. They use <code>COPY</code>, write in day order so writes stay inside one monthly partition at a time, and checkpoint after each fully committed day. Flight identifiers are deterministic UUIDv5 values derived from region, date and sequence, so a re-run reproduces the same rows and upserts are idempotent. The design target is 50 million flights and 100,000 users across five regions and two years of schedules.</p>
+
+      <p>On the machine used for this deployment the full target did not fit on disk, so the measured run loaded 10,000,017 flights, 22,064,378 inventory rows, 100,004 users and 22,064,378 read-model rows, about 13 GB in total. The numbers in the evidence section are from that run.</p>
+
+      <h3>9.5 Load and chaos testing</h3>
+
+      <p>k6 scenarios separate the read path from the write path. The booking scenario treats a 409 as the anti-oversell condition doing its job, not as a failed request. <code>scripts/chaos-worker-down.js</code> stops the background workers, keeps accepting bookings, restarts the workers and verifies that the read model catches up with a clean inventory audit. That is the operational claim the outbox exists for: the API keeps selling while projection is down, and recovery is automatic.</p>
+
+      <h3>9.6 Deployment</h3>
+
+      <p>Docker Compose runs a coordinator, two workers, the read model, Redis, PgBouncer, the API, an optional migration job and optional workers, with Prometheus under an observability profile. Kubernetes manifests, probes, scaling notes and the migration-before-rollout order live in <code>deploy/k8s/</code>. The same image runs the API, the workers and the migration job.</p>
+    </section>
+
+    <section id="evidence">
+      <div class="sec-head"><span class="sec-num">10</span><h2>Evidence</h2></div>
+
+      <p class="lede">The claims in this document are backed by tests that run against a real PostgreSQL database, and by a measured data load. These are the results to show during a presentation.</p>
+
+      <h3>10.1 The oversell test</h3>
+
+      <p><code>tests/concurrency/oversell.test.js</code> creates a flight with capacity 5 and issues 25 concurrent bookings. It asserts exactly:</p>
+
+      <div class="evidence">
+        <div class="ev"><div class="n">5</div><div class="d">bookings confirmed with 201</div></div>
+        <div class="ev"><div class="n">20</div><div class="d">rejected with <code>SOLD_OUT</code></div></div>
+        <div class="ev"><div class="n">0 / 0 / 5</div><div class="d">available / held / confirmed after the race</div></div>
+        <div class="ev"><div class="n">0</div><div class="d">audit violations</div></div>
+      </div>
+
+      <p>A second wave of requests is then issued against the exhausted cabin: every one is rejected, and the counters do not move. The audit returns an empty list, which means the counter and the booking table agree row for row.</p>
+
+      <h3>10.2 The seat double-book test</h3>
+
+      <p><code>tests/concurrency/seat-double-book.test.js</code> makes capacity deliberately irrelevant by using a full-size cabin, then has 10 buyers race for seat <code>12A</code>. Exactly one succeeds with a <code>CONFIRMED</code> booking; the other nine are rejected with <code>SEAT_UNAVAILABLE</code>, never a 500. The counter shows one confirmed seat and zero held seats, the audit is clean, and the seat map shows the seat as taken.</p>
+
+      <h3>10.3 Projection correctness</h3>
+
+      <p><code>tests/integration/projection.test.js</code> verifies the outbox pipeline against both databases:</p>
+
+      <ul>
+        <li>a new flight becomes searchable after one drain, with its cabin counters and the projection watermark;</li>
+        <li>a confirmed booking reaches search and <code>user_bookings</code> after one drain, with the read model showing one fewer available seat;</li>
+        <li>replaying an older <code>BOOKING_RESERVED</code> cannot revert a <code>CONFIRMED</code> projection;</li>
+        <li>replaying an older counter snapshot cannot overwrite fresher availability;</li>
+        <li>a deleted read-model row can be rebuilt from outbox history, and a user index can be rebuilt from the authoritative booking table.</li>
+      </ul>
+
+      <h3>10.4 Topology assertions</h3>
+
+      <p><code>tests/integration/topology.test.js</code> checks the distributed schema itself: the flight family uses <code>flight_id</code> and one co-location group, <code>user_bookings</code> uses <code>user_id</code>, <code>users</code> is a reference table, every worker is reachable, and the optional chaos case keeps the cluster available with one worker disabled.</p>
+
+      <h3>10.5 Measured load</h3>
+
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>Table</th><th class="num">Rows</th><th class="num">Footprint</th></tr></thead>
+          <tbody>
+            <tr><td><code>flights</code> with reporting index</td><td class="num">10,000,017</td><td class="num">2.4 GB</td></tr>
+            <tr><td><code>flight_inventory</code></td><td class="num">22,064,378</td><td class="num">3.6 GB</td></tr>
+            <tr><td><code>flight_availability</code> (read DB)</td><td class="num">22,064,378</td><td class="num">6.7 GB</td></tr>
+            <tr><td><code>users</code></td><td class="num">100,004</td><td class="num">32 MB</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="caption">Measured on 2026-10-20. The 17 flights and 34 inventory rows above the round numbers predate the load and carry no region; every region-tagged flight is exactly 2,000,000. The full 50M design target would be roughly 100 GB before WAL headroom.</p>
+
+      <div class="callout proof">
+        <span class="k">The short version for a presentation</span>
+        <p>Twenty-five buyers raced for five seats and the database sold five. Ten buyers raced for one seat and exactly one won. The read model was replayed out of order and refused to go backwards. A worker was stopped, bookings continued, and the read model caught up with a clean audit.</p>
+      </div>
+    </section>
+
+    <section id="tradeoffs">
+      <div class="sec-head"><span class="sec-num">11</span><h2>Trade-offs and limitations</h2></div>
+
+      <p>A course presentation is stronger when it states what the design gives up. These are deliberate choices, not omissions discovered later.</p>
+
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th style="width:30%">Decision</th><th style="width:30%">What it buys</th><th>What it costs</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Counters, not one row per seat</strong></td><td>Roughly 150M counter rows instead of 10B seat rows; the anti-oversell rule is one conditional update.</td><td>Seat identity is a separate resource; the seat map is derived rather than stored.</td></tr>
+            <tr><td><strong>Co-location by flight_id</strong></td><td>No two-phase commit, no cross-worker deadlock, a genuinely atomic rollback.</td><td>A transaction cannot span two flights; unique constraints must include the distribution column.</td></tr>
+            <tr><td><strong>Two distribution groups</strong></td><td>Each access path is single-shard: booking by flight, my-bookings by user.</td><td><code>user_bookings</code> is a second copy and is eventually consistent; it needs repair tooling.</td></tr>
+            <tr><td><strong>Separate read model</strong></td><td>Search scales independently and cannot block a sale; the model is rebuildable.</td><td>Search can lag, so the system must expose and monitor that lag.</td></tr>
+            <tr><td><strong>Transactional outbox</strong></td><td>No lost events, no dual-write gap, replay is safe.</td><td>At-least-once delivery and extra write volume; poison events need operational attention.</td></tr>
+            <tr><td><strong>Saga instead of a distributed transaction</strong></td><td>Works with an external gateway and survives process crashes.</td><td>Intermediate states exist and must be reconciled; a user can briefly hold a seat without a completed payment.</td></tr>
+            <tr><td><strong>Redis is optional</strong></td><td>No cache outage can corrupt a booking.</td><td>Without shared Redis, idempotency deduplication is per instance; the database index covers the same flight but not cross-flight replay.</td></tr>
+            <tr><td><strong>Single-region Citus</strong></td><td>Simple placement and a clear failure model.</td><td>Regions are a data column, not a geo-partitioning strategy. There is no multi-region active-active deployment.</td></tr>
+            <tr><td><strong>Simulated payments</strong></td><td>The saga, state machine and compensation path are real without PCI scope.</td><td>No real gateway, no network failure modes beyond injected latency and failure rate.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>Two larger limitations are worth naming. The coordinator is a single logical entry point in the Compose deployment; production high availability for it is an infrastructure concern that the code does not solve. And the system is single-tenant: there is no row-level security or per-tenant isolation. Both are reasonable scope choices for a course project, and both should be said out loud rather than left for a reviewer to find.</p>
+
+      <p>Partition maintenance is external. The application exposes the tooling and the advisory lock, but something has to schedule it. The same is true of the reaper and the projector: they run in-process by default, and a production deployment should run them as separate workers so a restart of the API does not pause projection.</p>
+    </section>
+
+    <section id="concepts">
+      <div class="sec-head"><span class="sec-num">12</span><h2>Course concept map</h2></div>
+
+      <p class="lede">This table is the bridge between the implementation and the syllabus. For each distributed-database concept, it names the concrete mechanism and the file to open if someone asks to see it.</p>
+
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th style="width:24%">Concept</th><th style="width:42%">Where it appears</th><th>What to point at</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Shared-nothing architecture</strong></td><td>Coordinator plus two workers, each with its own storage; the API is stateless.</td><td><code>docker-compose.yml</code>, Figure 1</td></tr>
+            <tr><td><strong>Horizontal fragmentation</strong></td><td><code>flights</code>, <code>flight_inventory</code>, <code>bookings</code>, <code>payments</code>, <code>booking_outbox</code> hash-distributed on <code>flight_id</code>.</td><td><code>db/migrations/003</code>, <code>004</code></td></tr>
+            <tr><td><strong>Derived horizontal fragmentation</strong></td><td>The booking tables are fragmented by the key of their parent flight, so a flight's rows travel together.</td><td>Placement map, §3.2</td></tr>
+            <tr><td><strong>Fragmentation transparency</strong></td><td>The application issues ordinary SQL; the coordinator chooses the shard.</td><td><code>src/db/pool.js</code>, repositories</td></tr>
+            <tr><td><strong>Replication</strong></td><td>Six reference tables are replicated in full to every worker; reads join locally.</td><td><code>db/migrations/008</code></td></tr>
+            <tr><td><strong>Co-location</strong></td><td>Five tables share one colocation group; the same <code>flight_id</code> lands on the same worker.</td><td><code>citus.distribute(..., { colocateWith })</code></td></tr>
+            <tr><td><strong>Distributed transaction avoidance</strong></td><td>No booking-path transaction spans shards, so no two-phase commit is used.</td><td><code>bookingService.runCreateSaga</code></td></tr>
+            <tr><td><strong>Distributed query processing</strong></td><td>Single-shard routing for hot paths; scatter-gather for lookups without the key.</td><td>§4.6, <code>bookingRepository.findAnyById</code></td></tr>
+            <tr><td><strong>Distributed schema constraints</strong></td><td>Unique keys include the distribution column; DDL cannot run inside a distributed transaction.</td><td>Composite PKs, <code>transactional: false</code></td></tr>
+            <tr><td><strong>Range partitioning</strong></td><td>Monthly <code>departure_date</code> partitions on every large table.</td><td><code>db/migrations/007</code>, <code>src/db/partitions.js</code></td></tr>
+            <tr><td><strong>Partition pruning</strong></td><td>Hot queries always carry <code>departure_date</code>; retention drops whole months.</td><td><code>findById</code>, <code>markPublished</code></td></tr>
+            <tr><td><strong>Concurrency control</strong></td><td>Row lock plus predicate re-evaluation in one conditional <code>UPDATE</code>; MVCC underneath.</td><td><code>inventoryRepository.reserve</code></td></tr>
+            <tr><td><strong>Distributed deadlock avoidance</strong></td><td>Single-shard transactions cannot form a cross-worker wait cycle.</td><td>§4.2</td></tr>
+            <tr><td><strong>CAP / BASE / eventual consistency</strong></td><td>Strong on the booking shard; eventual for search and the per-user index; lag is measured.</td><td>§7.5, freshness headers</td></tr>
+            <tr><td><strong>CQRS</strong></td><td>Write model and read model are separate schemas in separate databases.</td><td><code>db/migrations/006</code>, <code>projectionService</code></td></tr>
+            <tr><td><strong>Transactional outbox</strong></td><td>Event written with the state change; projector marks published after projecting.</td><td><code>booking_outbox</code>, <code>outboxConsumer</code></td></tr>
+            <tr><td><strong>Idempotency</strong></td><td>Redis claim plus a partial unique index; replay-safe projections.</td><td><code>idempotencyService</code>, <code>uq_booking_idempotency</code></td></tr>
+            <tr><td><strong>Saga and compensation</strong></td><td>Reserve, authorize, capture, confirm; refund and release on failure; persisted state.</td><td><code>bookingService.advanceSaga</code>, <code>compensate</code></td></tr>
+            <tr><td><strong>Failure detection and retry</strong></td><td>Whole-transaction retries, full-jitter backoff, a never-retry list.</td><td><code>transactionRetry.js</code></td></tr>
+            <tr><td><strong>Fault tolerance</strong></td><td>Hold reaper, saga reconciler, outbox retries, worker-down chaos test.</td><td><code>workers/</code>, <code>chaos-worker-down.js</code></td></tr>
+            <tr><td><strong>Data placement and topology</strong></td><td>Catalog inspection, topology report, idempotent convergence script.</td><td><code>src/db/citus.js</code>, <code>scripts/citus-init.js</code></td></tr>
+            <tr><td><strong>Distributed observability</strong></td><td>Node id, read-model lag, outbox backlog, topology in health output.</td><td><code>healthService.js</code>, <code>metrics.js</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Three questions a reviewer is likely to ask</h3>
+
+      <div class="two-col">
+        <div class="panel">
+          <h4>Why not one shard per flight?</h4>
+          <p>A hash of <code>flight_id</code> into 32 shards spreads millions of flights across workers while keeping every flight's rows together. One shard per flight would create millions of tiny shards and an unmanageable catalog.</p>
+        </div>
+        <div class="panel">
+          <h4>Why not use 2PC for the read model?</h4>
+          <p>The read model is a separate database and is allowed to lag. A two-phase commit across two databases would make search part of the booking critical path, which is exactly what the CQRS split avoids. The outbox gives at-least-once delivery with idempotent writes instead.</p>
+        </div>
+      </div>
+      <div class="panel" style="margin-top:12px">
+        <h4>What happens if a worker dies mid-booking?</h4>
+        <p>The transaction was local to that worker. If it had not committed, the client's retry is safe because the whole transaction is replayed; if it had committed, the booking and its outbox event are both durable, and the projector or reconciler continues from persisted state. No other shard is involved, so there is nothing to coordinate.</p>
+      </div>
+    </section>
+
+    <section id="demo">
+      <div class="sec-head"><span class="sec-num">13</span><h2>A ten-minute demo script</h2></div>
+
+      <p class="lede">A suggested order for a course presentation. Each step produces something visible, and the sequence builds from "it works" to "here is why it is distributed".</p>
+
+      <ol class="steps">
+        <li><span class="st">1 · Start</span><b>Bring up the local stack.</b> Run the migration and show <code>npm run db:status</code> reporting applied migrations and, on the Citus path, the coordinator, workers and shard distribution.</li>
+        <li><span class="st">2 · Schema</span><b>Show the placement map.</b> Open §3.2. Point out the five tables in one co-location group and the separate user group. This is the single most important slide.</li>
+        <li><span class="st">3 · Topology</span><b>Query the catalogs.</b> Run the topology endpoint or <code>scripts/citus-init.js --verify</code>. Show <code>pg_dist_partition</code> and <code>pg_dist_placement</code> proving the distribution column and shard placement.</li>
+        <li><span class="st">4 · Book</span><b>Create a booking with an <code>Idempotency-Key</code>.</b> Show 201, the booking row, the payment row and the outbox rows. Send the same request again and show 200 with the same booking.</li>
+        <li><span class="st">5 · Oversell</span><b>Run the concurrency test.</b> Show 25 requests against capacity 5, five confirmed, twenty <code>SOLD_OUT</code>, and a clean audit.</li>
+        <li><span class="st">6 · Seat</span><b>Run the seat race test.</b> Show ten buyers for one seat and exactly one winner.</li>
+        <li><span class="st">7 · Read model</span><b>Search before and after the projector drains.</b> Show the read-model row, the freshness watermark and the lag header. Then replay an older event and show the projection does not move backwards.</li>
+        <li><span class="st">8 · Failure</span><b>Run the worker-down chaos test.</b> Stop the workers, keep booking, restart them, and show the read model catching up with a clean audit.</li>
+        <li><span class="st">9 · Scale</span><b>Show the measured load table.</b> Ten million flights, twenty-two million inventory rows, one hundred thousand users. Explain what the counter model avoided.</li>
+        <li><span class="st">10 · Close</span><b>Return to the thesis.</b> Local key, local invariant, explicit eventual copies. Then open the concept map and invite questions against it.</li>
+      </ol>
+
+      <div class="callout">
+        <span class="k">The one sentence to leave in the room</span>
+        <p>The database enforces the invariants, the distribution key makes those invariants local, and everything that cannot be local is an explicitly eventual projection with a measurable lag and a rebuild path.</p>
+      </div>
+    </section>
+
+    <footer>
+      <b>Distributed Airline Inventory</b> · course dossier<br>
+      Write model: <code>airline_inventory</code> on Citus · Read model: <code>airline_read</code> on PostgreSQL 17<br>
+      Schema migrations: <code>db/migrations/001–012</code> · Distribution and topology: <code>src/db/citus.js</code>, <code>scripts/citus-init.js</code><br>
+      Core paths: <code>src/services/bookingService.js</code>, <code>src/repositories/inventoryRepository.js</code>, <code>src/services/projectionService.js</code>
+    </footer>
+  </main>
+</div>
+
+</body>
+</html>

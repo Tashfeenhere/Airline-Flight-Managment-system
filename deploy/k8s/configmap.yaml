@@ -1,0 +1,51 @@
+# Non-secret configuration shared by the API and worker workloads.
+#
+# Connection URLs, JWT secrets and any other credential live in the `airline-secrets`
+# Secret (see secret.example.yaml), never here. A ConfigMap is readable by anything with
+# get access to the namespace and is stored in plaintext in etcd.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: airline-config
+  namespace: airline
+  labels:
+    app.kubernetes.io/part-of: airline-inventory
+data:
+  NODE_ENV: "production"
+  PORT: "3000"
+  METRICS_ENABLED: "true"
+
+  # The API tier is HTTP-only. Workers run as their own Deployment; if this were true,
+  # stopping/scaling the worker Deployment would not actually stop projection.
+  WORKERS_ENABLED: "false"
+
+  # Worker-only metrics/liveness listener.
+  WORKER_METRICS_PORT: "9464"
+
+  # Workers. Poll intervals are deliberately explicit: they are the knobs an operator
+  # changes first when the outbox lag alert fires.
+  OUTBOX_POLL_INTERVAL_MS: "1000"
+  OUTBOX_BATCH_SIZE: "200"
+  OUTBOX_MAX_ATTEMPTS: "10"
+  REAPER_INTERVAL_MS: "30000"
+  REAPER_BATCH_SIZE: "200"
+  SAGA_INTERVAL_MS: "15000"
+  SAGA_BATCH_SIZE: "100"
+  SAGA_STALE_SECONDS: "60"
+
+  # Partition horizon. A flight outside it cannot be sold at all; keep this wider than
+  # the booking window, and schedule scripts/partition-maintenance.js as a CronJob.
+  PARTITION_MONTHS_AHEAD: "6"
+  PARTITION_MONTHS_BEHIND: "1"
+  PARTITION_RETENTION_MONTHS: "24"
+
+  # Do not leave rate limiting disabled in production: it is per-IP, so it needs
+  # TRUST_PROXY to see the real client behind the ingress.
+  RATE_LIMIT_ENABLED: "true"
+  TRUST_PROXY: "1"
+
+  # Origins are deployment-specific; override in an overlay.
+  CORS_ORIGINS: "https://app.example.com"
+
+  # Optional in-cluster Redis; omit to use the in-process cache driver.
+  REDIS_KEY_PREFIX: "airline"

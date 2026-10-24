@@ -1,0 +1,72 @@
+# Rolls the monthly partitions forward and applies retention.
+#
+# This is a correctness job, not housekeeping: a flight on a date with no partition
+# cannot be inserted, so its bookings fail with `no partition of relation ... found`.
+# The API does not create partitions on demand, so this CronJob is the only thing
+# keeping the horizon ahead of the booking window.
+#
+# The pass takes an advisory lock, so an overlapping manual run reports "already
+# running" instead of racing. Retention refuses to drop a partition that still holds
+# rows unless --force is passed; the default here therefore never destroys live data.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: airline-partitions
+  namespace: airline
+  labels:
+    app: airline-partitions
+    app.kubernetes.io/part-of: airline-inventory
+spec:
+  # 02:17 rather than 02:00: it avoids the hourly thundering herd and gives the previous
+  # day's backups time to finish.
+  schedule: "17 2 * * *"
+  timeZone: Etc/UTC
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  startingDeadlineSeconds: 600
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        metadata:
+          labels:
+            app: airline-partitions
+        spec:
+          restartPolicy: OnFailure
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: partitions
+              image: ghcr.io/example/distributed-airline-inventory:2.0.0
+              command: ["node", "scripts/partition-maintenance.js"]
+              envFrom:
+                - configMapRef:
+                    name: airline-config
+                - secretRef:
+                    name: airline-secrets
+              env:
+                - name: NODE_ID
+                  value: partitions-cron
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 96Mi
+                limits:
+                  cpu: 250m
+                  memory: 192Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: tmp
+              emptyDir: {}

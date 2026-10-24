@@ -1,0 +1,118 @@
+# API Deployment. Stateless: scale with the HPA, no leader election.
+#
+# The probes mirror the application's own contract:
+#   /api/health/live   synchronous, touches nothing -> restart decision.
+#   /api/health/ready  503 when the write model is unreachable -> routing decision.
+#
+# Using /ready as a liveness probe would restart every pod during a database outage,
+# which converts one outage into two. That is why there are two probes and two paths.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: airline-api
+  namespace: airline
+  labels:
+    app: airline-api
+    app.kubernetes.io/name: airline-api
+    app.kubernetes.io/part-of: airline-inventory
+spec:
+  replicas: 2
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: airline-api
+  template:
+    metadata:
+      labels:
+        app: airline-api
+        app.kubernetes.io/name: airline-api
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "3000"
+        prometheus.io/path: "/metrics"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      # The app's own shutdown deadline is 15s; give the kubelet room to deliver SIGTERM
+      # and report the exit before it is SIGKILLed.
+      terminationGracePeriodSeconds: 30
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: airline-api
+      containers:
+        - name: api
+          image: ghcr.io/example/distributed-airline-inventory:2.0.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 3000
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: airline-config
+            - secretRef:
+                name: airline-secrets
+          env:
+            - name: NODE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          startupProbe:
+            httpGet:
+              path: /api/health/live
+              port: http
+            failureThreshold: 30
+            periodSeconds: 2
+          livenessProbe:
+            httpGet:
+              path: /api/health/live
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /api/health/ready
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+            successThreshold: 1
+          lifecycle:
+            preStop:
+              # Let the endpoint controller remove this pod from the Service before
+              # server.close() starts refusing new connections.
+              exec:
+                command: ["sh", "-c", "sleep 5"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}

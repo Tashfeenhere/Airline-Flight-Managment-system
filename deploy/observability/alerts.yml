@@ -1,0 +1,257 @@
+# Prometheus alerting rules for the airline inventory service.
+#
+# Apply with:
+#   promtool check rules deploy/observability/alerts.yml
+#   kubectl -n airline create configmap airline-alerts --from-file=alerts.yml \
+#     --dry-run=client -o yaml | kubectl apply -f -
+#
+# Metric names come from src/observability/metrics.js. The `for` durations are chosen so
+# a single slow scrape or one rolled deployment does not page anyone: these alert on a
+# sustained condition, not on a single bad minute.
+#
+# The severity split is deliberate:
+#   page     — customer-visible now, or correctness at risk (oversell, lost event).
+#   ticket   — degradation that will become visible if left alone for a day.
+#
+# Labels `team` and `runbook` are consumed by Alertmanager routing and are the two an
+# on-call engineer needs first.
+
+groups:
+  - name: airline-availability
+    interval: 30s
+    rules:
+      - alert: AirlineApiErrorBudgetBurn
+        expr: |
+          (
+            sum(rate(airline_http_requests_total{status=~"5.."}[5m]))
+            /
+            clamp_min(sum(rate(airline_http_requests_total[5m])), 0.001)
+          ) > 0.05
+        for: 5m
+        labels:
+          severity: page
+          team: airline-platform
+          runbook: docs/RUNBOOK.md#incident-api-5xx
+        annotations:
+          summary: "More than 5% of API requests are failing with 5xx"
+          description: >-
+            The API has served {{ $value | humanizePercentage }} 5xx responses over the
+            last 5 minutes. Check /api/health/ready on each node, then
+            airline_db_errors_total by pool and code to separate a write-model outage
+            from a read-model one.
+
+      - alert: AirlineApiErrorRateElevated
+        expr: |
+          (
+            sum(rate(airline_http_requests_total{status=~"5.."}[10m]))
+            /
+            clamp_min(sum(rate(airline_http_requests_total[10m])), 0.001)
+          ) > 0.02
+        for: 15m
+        labels:
+          severity: ticket
+          team: airline-platform
+          runbook: docs/RUNBOOK.md#incident-api-5xx
+        annotations:
+          summary: "API 5xx rate above 2% for 15 minutes"
+          description: >-
+            Sustained error rate at {{ $value | humanizePercentage }}. If the error is
+            concentrated on POST /api/bookings, inspect serialization failures and retry
+            exhaustion before assuming the database is down.
+
+      - alert: AirlineApiLatencyP95High
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (rate(airline_http_request_duration_ms_bucket[5m]))
+          ) > 750
+        for: 10m
+        labels:
+          severity: ticket
+          team: airline-platform
+          runbook: docs/RUNBOOK.md#incident-latency
+        annotations:
+          summary: "API p95 latency above 750ms"
+          description: >-
+            p95 is {{ $value }}ms over 5 minutes. Split by route:
+            airline_http_request_duration_ms_bucket{route="/api/flights"} indicates the
+            read path; route="/api/bookings" indicates the write path.
+
+      - alert: AirlineApiLatencyP99Critical
+        expr: |
+          histogram_quantile(
+            0.99,
+            sum by (le) (rate(airline_http_request_duration_ms_bucket[5m]))
+          ) > 2000
+        for: 10m
+        labels:
+          severity: page
+          team: airline-platform
+          runbook: docs/RUNBOOK.md#incident-latency
+        annotations:
+          summary: "API p99 latency above 2s"
+          description: >-
+            p99 is {{ $value }}ms. Pair with airline_db_query_duration_ms p95 by pool:
+            a slow coordinator and a saturated PgBouncer look identical at the HTTP layer.
+
+      - alert: AirlineInstanceDown
+        expr: up{job="airline-api"} == 0
+        for: 2m
+        labels:
+          severity: page
+          team: airline-platform
+          runbook: docs/RUNBOOK.md#incident-instance-down
+        annotations:
+          summary: "API instance {{ $labels.instance }} is not being scraped"
+          description: >-
+            The process is down, unreachable, or /metrics is disabled. Check the pod and
+            whether METRICS_ENABLED was turned off in the last deployment.
+
+  - name: airline-bookings
+    interval: 30s
+    rules:
+      - alert: AirlineBookingFailureRateHigh
+        expr: |
+          (
+            sum(rate(airline_bookings_total{result=~"FAILED|PAYMENT_FAILED"}[10m]))
+            /
+            clamp_min(sum(rate(airline_bookings_total[10m])), 0.001)
+          ) > 0.10
+        for: 10m
+        labels:
+          severity: page
+          team: airline-platform
+          runbook: docs/RUNBOOK.md#incident-booking-failures
+        annotations:
+          summary: "More than 10% of booking attempts are failing or being compensated"
+          description: >-
+            {{ $value | humanizePercentage }} of booking attempts ended in FAILED or
+            PAYMENT_FAILED. Check the saga step metrics to locate the failing step, and
+            confirm PAYMENT_FAILURE_RATE is not set in production (it is a test hook).
+
+      - alert: AirlineSagaCompensationSpike
+        expr: |
+          sum(rate(airline_booking_saga_steps_total{result="COMPENSATED"}[10m])) > 0.1
+        for: 10m
+        labels:
+          severity: ticket
+          team: airline-platform
+          runbook: docs/RUNBOOK.md#incident-booking-failures
+        annotations:
+          summary: "Saga compensations are running above 0.1/s"
+          description: >-
+            Compensations are the safe outcome, but a sustained spike means seats are
+            being held and released repeatedly. Compare with
+            airline_inventory_reservations_total by result.
+
+      - alert: AirlineNoBookingsWhileServingTraffic
+        expr: |
+          sum(rate(airline_bookings_total{status="CONFIRMED"}[30m])) == 0
+          and
+          sum(rate(airline_http_requests_total{route="/api/bookings"}[30m])) > 0
+        for: 10m
+        labels:
+          severity: ticket
+          team: airline-platform
+          runbook: docs/RUNBOOK.md#incident-booking-failures
+        annotations:
+          summary: "Booking requests are arriving but none are being confirmed"
+          description: >-
+            The API is receiving booking traffic yet no booking has reached CONFIRMED in
+            30 minutes. Most likely every attempt is refused (inventory) or the saga
+            worker is not running — check the workers' logs and the outbox backlog.
+
+  - name: airline-outbox
+    interval: 30s
+    rules:
+      - alert: AirlineOutboxBacklogGrowing
+        expr: airline_outbox_pending_events > 1000
+        for: 10m
+        labels:
+          severity: page
+          team: airline-platform
+          runbook: docs/RUNBOOK.md#incident-outbox-backlog
+        annotations:
+          summary: "Outbox backlog is above 1000 unpublished events"
+          description: >-
+            The projector is down, slower than writes, or failing on a poisoned event.
+            Check airline_outbox_events_total{result="FAILED"} and the worker logs, then
+            restart the workers. No booking is lost — the events are durable in the
+            outbox — but the read model is stale.
+
+      - alert: AirlineOutboxLagHigh
+        expr: airline_outbox_lag_seconds > 300
+        for: 5m
+        labels:
+          severity: page
+          team: airline-platform
+          runbook: docs/RUNBOOK.md#incident-outbox-backlog
+        annotations:
+          summary: "Oldest unpublished outbox event is more than 5 minutes old"
+          description: >-
+            Read-model staleness is {{ $value }} seconds. Search results are behind the
+            write model by at least this much. Check the workers process and the read
+            database's connectivity separately.
+
+      - alert: AirlineReadModelLagHigh
+        expr: airline_read_model_lag_seconds{projection="outbox"} > 120
+        for: 10m
+        labels:
+          severity: ticket
+          team: airline-platform
+          runbook: docs/RUNBOOK.md#incident-outbox-backlog
+        annotations:
+          summary: "Read model is more than 2 minutes behind the write model"
+          description: >-
+            Projection {{ $labels.projection }} reports {{ $value }}s of lag. The write
+            path is unaffected; search and availability results are stale. Escalate to a
+            page if the backlog is also growing.
+
+  - name: airline-database
+    interval: 30s
+    rules:
+      - alert: AirlineDatabaseErrors
+        expr: sum(rate(airline_db_errors_total[5m])) > 0.5
+        for: 5m
+        labels:
+          severity: page
+          team: airline-platform
+          runbook: docs/RUNBOOK.md#incident-database
+        annotations:
+          summary: "Database error rate is above 0.5/s"
+          description: >-
+            Errors by pool/code: {{ $labels.pool }}/{{ $labels.code }}. A rising 40001
+            (serialization_failure) means contention outgrew the retry budget; a rise in
+            08006/57P01 means the cluster lost a node.
+
+      - alert: AirlineDatabaseLatencyHigh
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le, pool) (rate(airline_db_query_duration_ms_bucket[5m]))
+          ) > 250
+        for: 10m
+        labels:
+          severity: ticket
+          team: airline-platform
+          runbook: docs/RUNBOOK.md#incident-database
+        annotations:
+          summary: "Database p95 latency above 250ms on pool {{ $labels.pool }}"
+          description: >-
+            {{ $labels.pool }} queries are slow at p95. Check Citus node health, shard
+            placement balance, and whether PgBouncer's pool is saturated.
+
+      - alert: AirlineInventoryExhaustionSpike
+        expr: |
+          sum(rate(airline_inventory_reservations_total{result=~"SOLD_OUT|NO_INVENTORY"}[10m])) > 1
+        for: 15m
+        labels:
+          severity: ticket
+          team: airline-platform
+          runbook: docs/RUNBOOK.md#incident-inventory
+        annotations:
+          summary: "Inventory refusals above 1/s"
+          description: >-
+            Either demand genuinely exceeds capacity (expected around a launch) or
+            counters were imported without reconciliation. Run
+            `npm run oversell:audit` before assuming demand.

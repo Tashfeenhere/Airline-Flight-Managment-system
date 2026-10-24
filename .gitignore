@@ -14,6 +14,19 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
+# Local PostgreSQL cluster created by `npm run db:local:start`
+.pgdata/
+.pgdata.log
+
+# Bulk-loader checkpoints, NDJSON exports and other scratch files
+tmp/
+loaders/.state/
+__pycache__/
+*.pyc
+
+# Filled-in Kubernetes Secret (the tracked file is secret.example.yaml)
+deploy/k8s/secret.yaml
+
 # Test coverage
 coverage/
 .nyc_output/

@@ -1,0 +1,153 @@
+# =============================================================================
+# CI for the Distributed Airline Inventory service.
+#
+# Three INDEPENDENT jobs (no `needs:` between them) so a failure in one still
+# reports the others: a broken docker build must not hide a failing unit test,
+# and a flaky integration run must not suppress the lint result.
+#
+#   lint-and-unit  syntax-check every source file, then run the hermetic unit
+#                  suite (no database, no network).
+#   integration    migrate a REAL PostgreSQL, then run the integration and
+#                  concurrency suites against it.
+#   docker-build   prove the image still builds (pull requests only).
+#
+# WHY A REAL POSTGRESQL: the correctness claims of this system — "no oversell",
+# "the booking path is a single-shard local transaction" — are claims about MVCC
+# and row locking. A mock or an in-memory fake would prove nothing: it cannot
+# reproduce two transactions racing on the same `flight_inventory` row, and it
+# cannot enforce the CHECK/partial-unique constraints that are the actual
+# invariant. So the integration job stands up genuine PostgreSQL 18 and Redis 7
+# service containers and runs the migrations against them.
+# =============================================================================
+
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+# Cancel an in-flight run for the same ref when a newer commit arrives.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # 1. Static syntax check + unit tests. No services required.
+  # ---------------------------------------------------------------------------
+  lint-and-unit:
+    name: Lint and unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Syntax-check every source file
+        # node --check parses without executing; it catches syntax/`require`-level
+        # mistakes before jest has to load the module graph. Scripts are checked too:
+        # the migration runner, loaders and chaos tooling ship in the runtime image and
+        # a typo there is discovered at deploy time otherwise.
+        run: |
+          find src -name '*.js' -print0 | xargs -0 -n1 node --check
+          find scripts -name '*.js' -print0 | xargs -0 -n1 node --check
+
+      - name: Validate the Compose file
+        # Catches YAML and interpolation mistakes without starting anything.
+        run: docker compose config --quiet
+
+      - name: Unit tests
+        run: npx jest tests/unit --runInBand
+
+  # ---------------------------------------------------------------------------
+  # 2. Integration + concurrency against real PostgreSQL and Redis.
+  # ---------------------------------------------------------------------------
+  integration:
+    name: Integration and concurrency tests
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: airline
+          POSTGRES_PASSWORD: airline
+          POSTGRES_DB: airline_inventory
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U airline -d airline_inventory"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+
+    env:
+      # The write model and the read model are separate databases; migrations
+      # target each. Both live in the one PostgreSQL service container.
+      CITUS_COORDINATOR_URL: postgres://airline:airline@localhost:5432/airline_inventory
+      READMODEL_URL: postgres://airline:airline@localhost:5432/airline_read
+      REDIS_URL: redis://localhost:6379
+      NODE_ENV: test
+      # Rate limiting would make concurrent-booking tests nondeterministic.
+      RATE_LIMIT_ENABLED: "false"
+      LOG_LEVEL: error
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Create the read-model database
+        # POSTGRES_DB above creates only airline_inventory. The read model lives
+        # in its own database so it can be rebuilt independently.
+        env:
+          PGPASSWORD: airline
+        run: psql -h localhost -U airline -d airline_inventory -c 'CREATE DATABASE airline_read;'
+
+      - name: Apply migrations
+        run: node scripts/migrate.js
+
+      - name: Integration and concurrency tests
+        run: npx jest tests/integration tests/concurrency --runInBand
+
+  # ---------------------------------------------------------------------------
+  # 3. Docker build smoke test (pull requests only — pushes are covered by the
+  #    deploy pipeline, and building on every push is wasteful).
+  # ---------------------------------------------------------------------------
+  docker-build:
+    name: Docker build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build .

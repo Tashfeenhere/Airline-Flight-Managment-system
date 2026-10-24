@@ -1,0 +1,38 @@
+# ClusterIP service for the API. The ingress controller targets this.
+apiVersion: v1
+kind: Service
+metadata:
+  name: airline-api
+  namespace: airline
+  labels:
+    app: airline-api
+    app.kubernetes.io/part-of: airline-inventory
+spec:
+  type: ClusterIP
+  selector:
+    app: airline-api
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      protocol: TCP
+---
+# Metrics-only service for the workers. It deliberately exposes nothing but the
+# metrics/liveness port: worker pods must not receive customer traffic.
+apiVersion: v1
+kind: Service
+metadata:
+  name: airline-workers-metrics
+  namespace: airline
+  labels:
+    app: airline-workers
+    app.kubernetes.io/part-of: airline-inventory
+spec:
+  type: ClusterIP
+  selector:
+    app: airline-workers
+  ports:
+    - name: metrics
+      port: 9464
+      targetPort: metrics
+      protocol: TCP

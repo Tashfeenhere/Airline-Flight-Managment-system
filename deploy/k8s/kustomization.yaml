@@ -1,0 +1,32 @@
+# Kustomize entry point.
+#
+#   kubectl apply -k deploy/k8s
+#
+# `secret.example.yaml` is intentionally NOT listed: applying it with placeholder
+# credentials would overwrite a real Secret. Create `airline-secrets` out of band (see
+# secret.example.yaml) before applying.
+#
+# Override the image without editing the manifests:
+#   cd deploy/k8s && kustomize edit set image \
+#     ghcr.io/example/distributed-airline-inventory=ghcr.io/acme/airline:1.4.2
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: airline
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - api-deployment.yaml
+  - worker-deployment.yaml
+  - services.yaml
+  - autoscaling.yaml
+  - partition-cronjob.yaml
+  - networkpolicy.yaml
+  # Applied deliberately, not as part of every rollout, because a Job that has already
+  # completed will not run again under `apply`:
+  # - migrate-job.yaml
+
+labels:
+  - includeSelectors: false
+    pairs:
+      app.kubernetes.io/managed-by: kustomize
+      app.kubernetes.io/part-of: airline-inventory

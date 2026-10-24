@@ -1,0 +1,71 @@
+# Migration Job. Run this to completion BEFORE rolling a new API/worker image:
+#
+#   kubectl -n airline delete job airline-migrate --ignore-not-found
+#   kubectl -n airline apply -f deploy/k8s/migrate-job.yaml
+#   kubectl -n airline wait --for=condition=complete job/airline-migrate --timeout=10m
+#
+# It is not a Helm pre-install hook here because the manifests are plain YAML; in a
+# chart, annotate it `helm.sh/hook: pre-install,pre-upgrade` with
+# `hook-delete-policy: before-hook-creation`.
+#
+# `backoffLimit: 1` is intentional: a migration failure is usually schema drift or a
+# lost worker node, and replaying it ten times only delays the alert. The runner is
+# idempotent at the statement level, so a human can inspect the error and re-create
+# the Job safely.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: airline-migrate
+  namespace: airline
+  labels:
+    app: airline-migrate
+    app.kubernetes.io/part-of: airline-inventory
+spec:
+  backoffLimit: 1
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app: airline-migrate
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: migrate
+          image: ghcr.io/example/distributed-airline-inventory:2.0.0
+          command: ["node", "scripts/migrate.js"]
+          envFrom:
+            - configMapRef:
+                name: airline-config
+            - secretRef:
+                name: airline-secrets
+          env:
+            - name: NODE_ID
+              value: migrate
+            # Migrations read pg_dist_* catalog state and hold one session; they must
+            # talk to the coordinator directly, never through a transaction pooler.
+            - name: PGBOUNCER_URL
+              value: ""
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}

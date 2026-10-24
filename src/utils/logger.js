@@ -1,5 +1,51 @@
 /**
- * Structured logger for distributed node events and booking operations.
+ * Structured JSON logger.
+ *
+ * One line per event, machine-parseable, with the node id attached so logs from
+ * several API instances can be correlated. `logBookingEvent` keeps the original
+ * prototype's `[BOOKING_LOG]` shape so existing dashboards keep working.
+ */
+const env = require('../config/env');
+
+const LEVELS = Object.freeze({ error: 0, warn: 1, info: 2, debug: 3 });
+const activeLevel = LEVELS[env.LOG_LEVEL] !== undefined ? LEVELS[env.LOG_LEVEL] : LEVELS.info;
+
+function emit(level, message, meta = {}) {
+  if (LEVELS[level] > activeLevel) return;
+
+  const payload = {
+    ts: new Date().toISOString(),
+    level,
+    nodeId: env.NODE_ID,
+    message,
+    ...meta
+  };
+
+  // Errors are not JSON-serializable in a useful way; flatten them.
+  if (payload.error instanceof Error) {
+    payload.error = {
+      name: payload.error.name,
+      message: payload.error.message,
+      code: payload.error.code,
+      stack: env.isProduction ? undefined : payload.error.stack
+    };
+  }
+
+  const line = JSON.stringify(payload, (key, value) =>
+    key === 'stack' && value === undefined ? undefined : value
+  );
+
+  if (level === 'error') {
+    console.error(line);
+  } else if (level === 'warn') {
+    console.warn(line);
+  } else {
+    console.log(line);
+  }
+}
+
+/**
+ * Booking-domain event log retained from the prototype (stable field names).
  */
 function logBookingEvent({
   nodeId,
@@ -10,19 +56,21 @@ function logBookingEvent({
   retryCount = 0,
   result,
   error = null,
-  durationMs = null
+  durationMs = null,
+  ...extra
 }) {
   const logEntry = {
     timestamp: new Date().toISOString(),
-    nodeId: nodeId || process.env.NODE_ID || 'UNKNOWN_NODE',
+    nodeId: nodeId || env.NODE_ID || 'UNKNOWN_NODE',
     transactionId: transactionId || 'N/A',
     flightId: flightId ? String(flightId) : 'N/A',
-    seatNumber: seatNumber || 'N/A',
+    seatNumber: seatNumber || null,
     operation: operation || 'BOOKING',
     retryCount,
-    result, // e.g., 'SUCCESS', 'SEAT_UNAVAILABLE', 'VERSION_CONFLICT', 'ROLLBACK', 'IDEMPOTENT_HIT'
+    result,
     ...(error ? { error: error.message || String(error), errorCode: error.code } : {}),
-    ...(durationMs !== null ? { durationMs } : {})
+    ...(durationMs !== null ? { durationMs } : {}),
+    ...extra
   };
 
   const output = JSON.stringify(logEntry);
@@ -33,16 +81,10 @@ function logBookingEvent({
   }
 }
 
-function info(message, meta = {}) {
-  console.log(`[INFO] [${new Date().toISOString()}] [${process.env.NODE_ID || 'NODE'}]: ${message}`, Object.keys(meta).length ? JSON.stringify(meta) : '');
-}
-
-function error(message, meta = {}) {
-  console.error(`[ERROR] [${new Date().toISOString()}] [${process.env.NODE_ID || 'NODE'}]: ${message}`, Object.keys(meta).length ? JSON.stringify(meta) : '');
-}
-
 module.exports = {
   logBookingEvent,
-  info,
-  error
+  info: (message, meta) => emit('info', message, meta),
+  warn: (message, meta) => emit('warn', message, meta),
+  error: (message, meta) => emit('error', message, meta),
+  debug: (message, meta) => emit('debug', message, meta)
 };

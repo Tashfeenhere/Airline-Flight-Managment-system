@@ -1,81 +1,288 @@
-version: '3.8'
+# =============================================================================
+# Distributed Airline Inventory — local/production-shaped Citus stack.
+#
+# What each service is for:
+#   coordinator  the Citus coordinator. It holds NO business data of its own: it
+#                plans queries, routes them to the worker that owns each shard,
+#                and merges results. This is the single write endpoint the API
+#                uses (directly, or through PgBouncer).
+#   worker1/2    the actual shard storage. Distributed tables are split into
+#                shards and placed here; reference tables are replicated to both.
+#   readmodel    a plain PostgreSQL 17 holding the CQRS read model
+#                (flight_availability) and the projection_state bookkeeping. It
+#                is deliberately NOT part of the Citus cluster: search is allowed
+#                to lag and must be scalable/replaceable without touching the
+#                booking path.
+#   redis        idempotency records (SET NX), booking locks, hot caches, rate
+#                limit counters and refresh-token helpers. Durability is not
+#                required for correctness (the DB constraints are the real
+#                guarantee), so it runs with an appendonly volume for restart
+#                convenience only.
+#   pgbouncer    transaction-pooling pooler in front of the coordinator. Transaction
+#                pooling is SAFE here because the booking path holds no session
+#                state between statements: it does not use SET, LISTEN, advisory
+#                locks held across statements, or named prepared statements. Every
+#                booking is one self-contained transaction on one checked-out
+#                connection, which is exactly what transaction pooling wants.
+#   api          the Express API tier (see ./Dockerfile). Stateless; scale by
+#                replicas. Its env comes from .env with the container hostnames
+#                substituted for 127.0.0.1.
+#   migrate      one-shot migration runner (profile: tools). Run it explicitly:
+#                  docker compose --profile tools run --rm migrate
+#   workers      the hold reaper + outbox projector (profile: workers). Kept in a
+#                separate service/process from the API so a worker crash never
+#                takes the API down.
+#
+# Profiles mean a plain `docker compose up` starts ONLY the datastores + api.
+# `docker compose --profile tools up` adds migrate; `--profile workers up` adds
+# the background workers; `--profile observability up` adds Prometheus (scraping both
+# the API and the workers, with the rules in deploy/observability/alerts.yml).
+#
+# ONE-TIME BOOTSTRAP: after the cluster is healthy, register the workers with the
+# coordinator exactly once (from the coordinator):
+#     SELECT citus_add_node('worker1', 5432);
+#     SELECT citus_add_node('worker2', 5432);
+# Migrations then distribute the big tables and replicate the small ones. Without
+# registered workers, distributions/008 no-op and the schema stays local (safe,
+# but not distributed) — see docs/RUNBOOK.md.
+# =============================================================================
 
 services:
-  # Authoritative Distributed Database (Single-Node Replica Set for Multi-Document Transactions)
-  mongo:
-    image: mongo:7.0
-    container_name: airline_mongo
-    command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
+  coordinator:
+    image: citusdata/citus:14.2.0-pg17
+    container_name: airline_coordinator
+    environment:
+      POSTGRES_USER: airline
+      POSTGRES_PASSWORD: airline
+      POSTGRES_DB: airline_inventory
     ports:
-      - "27017:27017"
+      - "5432:5432"
     volumes:
-      - mongo_data:/data/db
+      - coordinator_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      test: ["CMD-SHELL", "pg_isready -U airline -d airline_inventory"]
       interval: 5s
       timeout: 5s
-      retries: 10
+      retries: 20
+      start_period: 10s
+
+  worker1:
+    image: citusdata/citus:14.2.0-pg17
+    container_name: airline_worker1
+    environment:
+      POSTGRES_USER: airline
+      POSTGRES_PASSWORD: airline
+      POSTGRES_DB: airline_inventory
+    volumes:
+      - worker1_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U airline -d airline_inventory"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  worker2:
+    image: citusdata/citus:14.2.0-pg17
+    container_name: airline_worker2
+    environment:
+      POSTGRES_USER: airline
+      POSTGRES_PASSWORD: airline
+      POSTGRES_DB: airline_inventory
+    volumes:
+      - worker2_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U airline -d airline_inventory"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  readmodel:
+    image: postgres:17
+    container_name: airline_readmodel
+    environment:
+      POSTGRES_USER: airline
+      POSTGRES_PASSWORD: airline
+      POSTGRES_DB: airline_read
+    ports:
+      - "5433:5432"
+    volumes:
+      - readmodel_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U airline -d airline_read"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    container_name: airline_redis
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
       start_period: 5s
 
-  # One-time initialization service to configure replica set rs0 and seed PK123 / Seat 12A
-  mongo-init:
-    build: .
-    container_name: airline_mongo_init
-    command: ["node", "scripts/init-replica-set.js"]
+  pgbouncer:
+    image: edoburu/pgbouncer:latest
+    container_name: airline_pgbouncer
     environment:
-      - MONGO_HOST=mongo:27017
-      - REPLSET_NAME=rs0
+      DB_HOST: coordinator
+      DB_PORT: "5432"
+      DB_USER: airline
+      DB_PASSWORD: airline
+      DB_NAME: airline_inventory
+      # Transaction pooling: a server connection is handed back at COMMIT, which is
+      # safe only because no code path uses session-scoped state or prepared
+      # statements. Do not switch to session pooling without re-reading the note
+      # at the top of this file.
+      POOL_MODE: transaction
+      AUTH_TYPE: scram-sha-256
+      MAX_CLIENT_CONN: "500"
+      DEFAULT_POOL_SIZE: "20"
+    ports:
+      - "6432:5432"
     depends_on:
-      mongo:
+      coordinator:
         condition: service_healthy
+    healthcheck:
+      # pg_isready ships with the PostgreSQL client tools bundled in this image.
+      # If a future tag drops them, replace with a TCP check on 6432.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432 -U airline -d airline_inventory"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
 
-  # Airport Booking Office Node A
-  node-a:
-    build: .
-    container_name: airline_node_a
-    ports:
-      - "3001:3001"
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: airline_api
+    # Pull extra tunables (hold TTL, payment failure rate, JWT secrets, ...) from
+    # .env when present, then overwrite the hostnames with the in-network names.
+    env_file:
+      - path: .env
+        required: false
     environment:
-      - NODE_ID=NODE_A
-      - PORT=3001
-      - MONGO_URI=mongodb://mongo:27017/airline_inventory?replicaSet=rs0
-      - NODE_ENV=production
+      NODE_ENV: production
+      NODE_ID: api-1
+      PORT: "3000"
+      # The API tier serves HTTP only. Running the workers here as well would make
+      # "stop the workers" (the chaos test, a worker rollout) stop nothing, because the
+      # API replica would keep projecting. They are a separate workload by design.
+      WORKERS_ENABLED: "false"
+      CITUS_COORDINATOR_URL: postgres://airline:airline@coordinator:5432/airline_inventory
+      PGBOUNCER_URL: postgres://airline:airline@pgbouncer:5432/airline_inventory
+      READMODEL_URL: postgres://airline:airline@readmodel:5432/airline_read
+      REDIS_URL: redis://redis:6379
+    # PID 1 init so SIGTERM actually reaches node (the reaper/outbox pollers must
+    # shut down cleanly to stop mid-batch). Equivalent to `docker run --init`.
+    init: true
+    ports:
+      - "3000:3000"
     depends_on:
-      mongo-init:
-        condition: service_completed_successfully
-    restart: on-failure
+      coordinator:
+        condition: service_healthy
+      readmodel:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      pgbouncer:
+        condition: service_healthy
+    restart: unless-stopped
 
-  # Airport Booking Office Node B
-  node-b:
-    build: .
-    container_name: airline_node_b
-    ports:
-      - "3002:3002"
+  # ---------------------------------------------------------------------------
+  # Optional services. Start them with `--profile tools` / `--profile workers` /
+  # `--profile observability`.
+  # ---------------------------------------------------------------------------
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    profiles: ["tools"]
+    command: ["node", "scripts/migrate.js"]
+    env_file:
+      - path: .env
+        required: false
     environment:
-      - NODE_ID=NODE_B
-      - PORT=3002
-      - MONGO_URI=mongodb://mongo:27017/airline_inventory?replicaSet=rs0
-      - NODE_ENV=production
+      NODE_ENV: production
+      NODE_ID: migrate
+      # Migrations talk to the coordinator directly, never through PgBouncer:
+      # the runner holds one connection for the whole session and reads
+      # pg_dist_* catalog state.
+      CITUS_COORDINATOR_URL: postgres://airline:airline@coordinator:5432/airline_inventory
+      PGBOUNCER_URL: ""
+      READMODEL_URL: postgres://airline:airline@readmodel:5432/airline_read
     depends_on:
-      mongo-init:
-        condition: service_completed_successfully
-    restart: on-failure
+      coordinator:
+        condition: service_healthy
+      readmodel:
+        condition: service_healthy
+    restart: "no"
 
-  # Airport Booking Office Node C
-  node-c:
-    build: .
-    container_name: airline_node_c
-    ports:
-      - "3003:3003"
+  workers:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    profiles: ["workers"]
+    command: ["node", "scripts/run-workers.js"]
+    env_file:
+      - path: .env
+        required: false
     environment:
-      - NODE_ID=NODE_C
-      - PORT=3003
-      - MONGO_URI=mongodb://mongo:27017/airline_inventory?replicaSet=rs0
-      - NODE_ENV=production
+      NODE_ENV: production
+      NODE_ID: workers
+      # Prometheus scrapes this port. The gauges that matter for the outbox alerts live
+      # in this process, not in the API.
+      WORKER_METRICS_PORT: "9464"
+      CITUS_COORDINATOR_URL: postgres://airline:airline@coordinator:5432/airline_inventory
+      READMODEL_URL: postgres://airline:airline@readmodel:5432/airline_read
+      REDIS_URL: redis://redis:6379
+    ports:
+      - "9464:9464"
+    init: true
     depends_on:
-      mongo-init:
-        condition: service_completed_successfully
-    restart: on-failure
+      coordinator:
+        condition: service_healthy
+      readmodel:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Observability. `--profile observability` adds Prometheus with the alert rules in
+  # deploy/observability/. It scrapes the API and the workers; the worker scrape is the
+  # one that makes the outbox alerts real. No Alertmanager is shipped locally — firing
+  # alerts are visible at http://localhost:9090/alerts, which is enough to verify a rule.
+  prometheus:
+    image: prom/prometheus:v3.1.0
+    container_name: airline_prometheus
+    profiles: ["observability"]
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+    volumes:
+      - ./deploy/observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./deploy/observability/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    depends_on:
+      - api
 
 volumes:
-  mongo_data:
+  coordinator_data:
+  worker1_data:
+  worker2_data:
+  readmodel_data:
+  redis_data:
+  prometheus_data:

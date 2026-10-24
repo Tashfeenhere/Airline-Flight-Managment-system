@@ -1,0 +1,76 @@
+# Horizontal autoscaling for the stateless API tier.
+#
+# CPU is the right signal here because every request is CPU-bound on JSON, validation
+# and connection scheduling; the database is the bottleneck that CPU cannot see, so an
+# HPA alone will not save a saturated coordinator. Pair it with the
+# AirlineDatabaseLatencyHigh alert rather than raising maxReplicas blindly.
+#
+# Requires metrics-server (or a custom-metrics adapter for the commented block).
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: airline-api
+  namespace: airline
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: airline-api
+  minReplicas: 2
+  maxReplicas: 10
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 30
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 30
+    scaleDown:
+      # Slow on the way down: a booking burst is usually followed by a quiet period in
+      # which in-flight sagas and their retries are still draining.
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 25
+          periodSeconds: 60
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+  # If a Prometheus adapter is installed, scaling on booking latency is more faithful
+  # to the SLO than CPU. Enable only after the metric is known to be scraped.
+  # metrics:
+  #   - type: Pods
+  #     pods:
+  #       metric:
+  #         name: airline_http_request_duration_ms_p95
+  #       target:
+  #         type: AverageValue
+  #         averageValue: 500m
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: airline-api
+  namespace: airline
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: airline-api
+---
+# One worker replica is enough to keep the outbox draining during a voluntary
+# disruption; requiring both would block node drains.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: airline-workers
+  namespace: airline
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: airline-workers

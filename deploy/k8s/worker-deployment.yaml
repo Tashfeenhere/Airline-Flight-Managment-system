@@ -1,0 +1,109 @@
+# Worker Deployment: outbox projector + hold reaper + saga reconciler.
+#
+# Safe to scale horizontally. Projection upserts are guarded by event time and the
+# outbox marks events published only after a successful projection, so two replicas can
+# process the same event without corrupting the read model; reaper claims make double
+# expiry impossible. More replicas increase outbox throughput; they do not require
+# leader election.
+#
+# /api/health/live is served on the metrics port by src/workers/runWorkers.js. It is a
+# process-liveness endpoint only — it deliberately does not check the database, because
+# restarting a worker during a database blip loses nothing and fixes nothing.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: airline-workers
+  namespace: airline
+  labels:
+    app: airline-workers
+    app.kubernetes.io/name: airline-workers
+    app.kubernetes.io/part-of: airline-inventory
+spec:
+  replicas: 2
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: airline-workers
+  template:
+    metadata:
+      labels:
+        app: airline-workers
+        app.kubernetes.io/name: airline-workers
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9464"
+        prometheus.io/path: "/metrics"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      terminationGracePeriodSeconds: 30
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: airline-workers
+      containers:
+        - name: workers
+          image: ghcr.io/example/distributed-airline-inventory:2.0.0
+          imagePullPolicy: IfNotPresent
+          command: ["node", "scripts/run-workers.js"]
+          ports:
+            - name: metrics
+              containerPort: 9464
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: airline-config
+            - secretRef:
+                name: airline-secrets
+          env:
+            - name: NODE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          resources:
+            requests:
+              cpu: 100m
+              memory: 192Mi
+            limits:
+              cpu: 500m
+              memory: 384Mi
+          livenessProbe:
+            httpGet:
+              path: /api/health/live
+              port: metrics
+            initialDelaySeconds: 5
+            periodSeconds: 15
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /api/health/live
+              port: metrics
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}

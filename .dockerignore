@@ -1,0 +1,18 @@
+# Keep the build context small and the image free of anything the process does
+# not need: tests, docs and CI config are not part of the runtime image (the
+# Dockerfile copies only src/, scripts/ and db/ regardless, but excluding them
+# here also avoids shipping them over the Docker build context).
+node_modules
+.git
+legacy
+coverage
+*.log
+.env
+tests
+docs
+.github
+
+# Local developer state: the throwaway PostgreSQL cluster and its WAL are large
+# and machine-specific, and must never enter a build context.
+.pgdata
+.pgdata.log
