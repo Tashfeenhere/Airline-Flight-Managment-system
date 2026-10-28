@@ -106,7 +106,16 @@ function buildApp() {
   );
 
   app.use(cors(corsOptions()));
-  app.use(compression());
+  app.use(
+    compression({
+      filter: (req, res) => {
+        if (req.path === '/api/stream' || (req.headers && req.headers.accept === 'text/event-stream')) {
+          return false;
+        }
+        return compression.filter(req, res);
+      }
+    })
+  );
 
   app.use(requestContext);
   app.use(requestLogger);
@@ -133,19 +142,21 @@ function buildApp() {
  */
 function warnOnRiskyConfig() {
   if (env.isProduction) {
+    if (String(env.JWT_ACCESS_SECRET).startsWith('dev-only-') || String(env.JWT_REFRESH_SECRET).startsWith('dev-only-')) {
+      throw new Error('FATAL: JWT secrets are configured with development defaults in production. Process refusing to boot.');
+    }
+    if (env.CORS_ORIGINS.includes('*')) {
+      throw new Error('FATAL: CORS_ORIGINS is set to wildcard "*" in production. Process refusing to boot.');
+    }
+    if (process.env.CHAOS_ENABLED === 'true' || process.env.OTP_BYPASS === 'true') {
+      throw new Error('FATAL: Dangerous testing/chaos flags enabled in production. Process refusing to boot.');
+    }
     if (!env.TRUST_PROXY) {
       logger.warn(
         'TRUST_PROXY is unset in production: req.ip will be the load balancer address, so every ' +
           'client shares one rate-limit bucket.'
       );
     }
-    if (String(env.JWT_ACCESS_SECRET).startsWith('dev-only-')) {
-      logger.warn('JWT_ACCESS_SECRET is still the development default. Set a real secret.');
-    }
-  }
-
-  if (env.CORS_ORIGINS.includes('*') && env.isProduction) {
-    logger.warn('CORS_ORIGINS is "*" in production: any origin may call the API from a browser.');
   }
 }
 

@@ -18,11 +18,19 @@ function requestLogger(req, res, next) {
   // drowns the reporter output and slows CI down for no benefit.
   if (env.isTest) return next();
 
+  if (req.path.startsWith('/api') && !req.path.includes('/stream')) {
+    console.log(`[HTTP] --> ${req.method} ${req.originalUrl || req.path}`);
+  }
+
   const startedAt = Date.now();
 
   res.on('finish', () => {
     const status = res.statusCode;
     const durationMs = Date.now() - startedAt;
+
+    if (req.path.startsWith('/api') && !req.path.includes('/stream')) {
+      console.log(`[HTTP] <-- ${req.method} ${req.originalUrl || req.path} ${status} (${durationMs}ms)`);
+    }
 
     // `req.route` is populated only once the request has reached a matched route
     // handler, so prefer its template ('/api/bookings/:id') over the raw path —

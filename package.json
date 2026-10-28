@@ -11,6 +11,12 @@
     "start:node-a": "cross-env NODE_ID=api-1 PORT=3001 node src/server.js",
     "start:node-b": "cross-env NODE_ID=api-2 PORT=3002 node src/server.js",
     "start:node-c": "cross-env NODE_ID=api-3 PORT=3003 node src/server.js",
+    "docker:up": "docker compose up -d coordinator worker1 worker2 readmodel redis pgbouncer api frontend",
+    "docker:down": "docker compose down",
+    "docker:migrate": "docker compose --profile tools run --rm migrate",
+    "docker:workers": "docker compose --profile workers up -d workers",
+    "docker:observability": "docker compose --profile observability up -d prometheus",
+    "docker:logs": "docker compose logs -f",
     "db:local:start": "node scripts/local-pg-cluster.js start",
     "db:local:stop": "node scripts/local-pg-cluster.js stop",
     "db:local:status": "node scripts/local-pg-cluster.js status",
@@ -19,6 +25,7 @@
     "db:migrate": "node scripts/migrate.js",
     "db:status": "node scripts/db-status.js",
     "db:reset": "node scripts/db-setup.js --reset",
+    "db:counts": "node scripts/setup-column-counts.js",
     "seed:dev": "node scripts/seed-dev-fixture.js",
     "partitions:maintain": "node scripts/partition-maintenance.js",
     "readmodel:reproject": "node scripts/reproject-readmodel.js",
@@ -32,6 +39,7 @@
     "reaper:run": "node scripts/run-workers.js reaper",
     "outbox:run": "node scripts/run-workers.js outbox",
     "workers:run": "node scripts/run-workers.js all",
+    "audit": "node scripts/oversell-audit.js",
     "audit:oversell": "node scripts/oversell-audit.js",
     "stress": "node scripts/stress-test.js",
     "saga:reconcile": "node scripts/reconcile-sagas.js",
@@ -55,6 +63,7 @@
   "author": "Distributed Systems Prototype",
   "license": "ISC",
   "dependencies": {
+    "@elastic/elasticsearch": "^9.5.1",
     "compression": "^1.7.5",
     "cors": "^2.8.5",
     "cross-env": "^7.0.3",
@@ -75,6 +84,7 @@
   },
   "devDependencies": {
     "jest": "^29.7.0",
+    "pdfkit": "^0.20.2",
     "supertest": "^7.0.0"
   },
   "jest": {

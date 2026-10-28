@@ -79,6 +79,13 @@ function logBookingEvent({
   } else {
     console.warn(`[BOOKING_LOG] ${output}`);
   }
+
+  try {
+    const { publishStreamEvent } = require('../services/eventStreamService');
+    publishStreamEvent('BOOKING_EVENT', logEntry);
+  } catch {
+    // ignore
+  }
 }
 
 module.exports = {

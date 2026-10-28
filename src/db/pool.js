@@ -33,21 +33,27 @@ types.setTypeParser(20, (value) => (value === null ? null : Number.parseInt(valu
 types.setTypeParser(1082, (value) => value);
 
 function buildPoolConfig(connectionString, { max, applicationName, statementTimeoutMs }) {
+  const isPgBouncer = /pgbouncer|:6432/i.test(connectionString);
   const config = {
     connectionString,
     max,
     idleTimeoutMillis: env.PG_IDLE_TIMEOUT_MS,
     connectionTimeoutMillis: env.PG_CONNECTION_TIMEOUT_MS,
     application_name: applicationName,
-    // Sent as connection startup parameters, so every pooled connection is
-    // protected regardless of which code path uses it.
-    statement_timeout: statementTimeoutMs,
-    idle_in_transaction_session_timeout: env.PG_IDLE_IN_TRANSACTION_TIMEOUT_MS,
     maxLifetimeSeconds: env.PG_MAX_LIFETIME_SECONDS,
     // Defaults are fine for our row shapes but keep the name explicit so
     // PgBouncer transaction pooling stays safe (no named prepared statements).
     allowExitOnIdle: false
   };
+
+  // PgBouncer transaction pooling mode rejects connection startup parameters
+  // like statement_timeout and idle_in_transaction_session_timeout.
+  if (!isPgBouncer) {
+    if (statementTimeoutMs) config.statement_timeout = statementTimeoutMs;
+    if (env.PG_IDLE_IN_TRANSACTION_TIMEOUT_MS) {
+      config.idle_in_transaction_session_timeout = env.PG_IDLE_IN_TRANSACTION_TIMEOUT_MS;
+    }
+  }
 
   // `sslmode` in a URL does not map to libpq semantics in node-postgres, so make
   // the intent explicit instead of relying on the URL.

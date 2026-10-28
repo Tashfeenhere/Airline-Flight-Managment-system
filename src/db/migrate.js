@@ -85,6 +85,7 @@ async function runMigrations(target, options = {}) {
 
   const client = await poolForTarget.connect();
   try {
+    await client.query('SET statement_timeout = 0;');
     await ensureMigrationTable(client);
     const applied = await appliedMigrations(client);
 

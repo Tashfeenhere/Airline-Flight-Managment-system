@@ -97,15 +97,21 @@ module.exports = {
     await client.query(`
       CREATE INDEX IF NOT EXISTS idx_bookings_flight_status
         ON bookings (flight_id, departure_date, status);
+    `);
 
+    await client.query(`
       CREATE INDEX IF NOT EXISTS idx_bookings_user_date
         ON bookings (user_id, departure_date DESC);
+    `);
 
+    await client.query(`
       -- Drives the hold-expiry reaper; partial so it only covers open holds.
       CREATE INDEX IF NOT EXISTS idx_bookings_hold_expiry
         ON bookings (hold_expires_at)
         WHERE status = 'PENDING';
+    `);
 
+    await client.query(`
       CREATE INDEX IF NOT EXISTS idx_bookings_transaction
         ON bookings (transaction_id);
     `);
@@ -148,7 +154,9 @@ module.exports = {
     await client.query(`
       CREATE INDEX IF NOT EXISTS idx_payments_status
         ON payments (status, departure_date);
+    `);
 
+    await client.query(`
       CREATE INDEX IF NOT EXISTS idx_payments_booking
         ON payments (flight_id, departure_date, booking_id);
     `);

@@ -1,15 +1,17 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Trash2, CheckCircle2, ArrowLeft } from 'lucide-react';
+import { Plus, Trash2, CheckCircle2, ArrowLeft, Plane, Sparkles, Layers, DollarSign, Info } from 'lucide-react';
 import { adminApi } from '../../api/admin';
 import { CABINS, FLIGHT_STATUS } from '../../utils/constants';
 import AdminSidebar from '../../components/layout/AdminSidebar';
 import Input from '../../components/ui/Input';
 import Button from '../../components/ui/Button';
 import Alert from '../../components/ui/Alert';
+import { useToast } from '../../components/ui/Toast';
 
 export default function AdminCreateFlightPage() {
   const navigate = useNavigate();
+  const toast = useToast();
 
   const [flightNumber, setFlightNumber] = useState('PK-785');
   const [airlineCode, setAirlineCode] = useState('PIA');
@@ -31,6 +33,69 @@ export default function AdminCreateFlightPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(false);
+
+  // 1-Click Route Presets for Easy Provisioning
+  const applyPreset = (preset) => {
+    setFlightNumber(preset.flightNumber);
+    setAirlineCode(preset.airlineCode);
+    setOrigin(preset.origin);
+    setDestination(preset.destination);
+    setAircraftType(preset.aircraftType);
+    setBasePrice(preset.basePrice);
+    setCurrency(preset.currency);
+    setCabins(preset.cabins);
+    toast.info(`Loaded pre-filled flight template for ${preset.airlineCode} ${preset.flightNumber} (${preset.origin} → ${preset.destination})`, 'Preset Loaded');
+  };
+
+  const presets = [
+    {
+      name: 'Transatlantic PK-785',
+      aircraft: 'Boeing 777-300ER',
+      flightNumber: 'PK-785',
+      airlineCode: 'PIA',
+      origin: 'ISB',
+      destination: 'LHR',
+      aircraftType: 'Boeing 777-300ER',
+      basePrice: 650,
+      currency: 'USD',
+      cabins: [
+        { cabin: 'ECONOMY', totalSeats: 280, price: 650 },
+        { cabin: 'BUSINESS', totalSeats: 28, price: 1850 },
+        { cabin: 'FIRST', totalSeats: 8, price: 3200 },
+      ],
+    },
+    {
+      name: 'Gulf Express PK-211',
+      aircraft: 'Airbus A350-900',
+      flightNumber: 'PK-211',
+      airlineCode: 'PIA',
+      origin: 'KHI',
+      destination: 'DXB',
+      aircraftType: 'Airbus A350-900',
+      basePrice: 380,
+      currency: 'USD',
+      cabins: [
+        { cabin: 'ECONOMY', totalSeats: 260, price: 380 },
+        { cabin: 'BUSINESS', totalSeats: 32, price: 1100 },
+      ],
+    },
+    {
+      name: 'Asia Shuttle PK-892',
+      aircraft: 'Boeing 787-9 Dreamliner',
+      flightNumber: 'PK-892',
+      airlineCode: 'PIA',
+      origin: 'LHE',
+      destination: 'SIN',
+      aircraftType: 'Boeing 787-9 Dreamliner',
+      basePrice: 520,
+      currency: 'USD',
+      cabins: [
+        { cabin: 'ECONOMY', totalSeats: 240, price: 520 },
+        { cabin: 'PREMIUM_ECONOMY', totalSeats: 24, price: 890 },
+        { cabin: 'BUSINESS', totalSeats: 30, price: 1650 },
+      ],
+    },
+  ];
 
   const handleAddCabin = () => {
     const unusedCabin = CABINS.find((c) => !cabins.some((entry) => entry.cabin === c)) || 'FIRST';
@@ -72,19 +137,22 @@ export default function AdminCreateFlightPage() {
       const res = await adminApi.upsertFlight(payload);
       if (res.success) {
         setSuccess(true);
+        toast.success(`Flight ${payload.airlineCode} ${payload.flightNumber} provisioned across Citus worker shards!`, 'Flight Created');
       }
     } catch (err) {
-      setError(err.error?.message || err.message || 'Flight creation failed.');
+      const msg = err.error?.message || err.message || 'Flight creation failed.';
+      setError(msg);
+      toast.error(msg, 'Creation Error');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div style={{ display: 'flex', width: '100%' }}>
+    <div style={{ display: 'flex', width: '100%', minHeight: 'calc(100vh - var(--header-height))' }}>
       <AdminSidebar />
 
-      <div style={{ flex: 1, padding: '2rem 2.5rem', display: 'flex', flexDirection: 'column', gap: '1.5rem', maxWidth: '1000px' }}>
+      <div style={{ flex: 1, padding: '2rem 2.5rem', display: 'flex', flexDirection: 'column', gap: '1.75rem', maxWidth: '1050px' }}>
         <div>
           <button
             onClick={() => navigate('/admin/flights')}
@@ -102,319 +170,270 @@ export default function AdminCreateFlightPage() {
             }}
           >
             <ArrowLeft size={16} />
-            Back to Flight List
+            Back to Flight Schedule Index
           </button>
-          <h1 style={{ fontSize: '1.8rem', fontWeight: '800', marginBottom: '0.25rem' }}>
-            Create / Upsert Flight Record
+
+          <span
+            style={{
+              fontSize: '0.72rem',
+              textTransform: 'uppercase',
+              letterSpacing: '0.08em',
+              fontWeight: '800',
+              color: 'var(--accent-cyan)',
+              backgroundColor: 'rgba(6, 182, 212, 0.12)',
+              padding: '0.2rem 0.65rem',
+              borderRadius: 'var(--radius-full)',
+              border: '1px solid rgba(6, 182, 212, 0.3)',
+              display: 'inline-block',
+              marginBottom: '0.35rem',
+            }}
+          >
+            Inventory Provisioning Desk
+          </span>
+          <h1 style={{ fontSize: '1.9rem', fontWeight: '800', color: 'var(--text-primary)', margin: 0 }}>
+            Provision Flight Route & Initialize Cabin Shards
           </h1>
-          <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
-            Provision a new flight route and initialize distributed inventory counters across Citus shards.
+          <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', marginTop: '0.3rem', maxWidth: '820px' }}>
+            Allocates a new partitioned flight record. Row-level inventory counters will be distributed to a target Citus worker node.
           </p>
         </div>
 
-        {success ? (
+        {/* 1-Click Pre-filled Templates Bar */}
+        <div
+          style={{
+            backgroundColor: 'var(--bg-glass-card)',
+            border: '1px solid var(--border-color)',
+            borderRadius: 'var(--radius-lg)',
+            padding: '1.25rem',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '0.75rem',
+            backdropFilter: 'blur(16px)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: 'var(--accent-primary)', fontSize: '0.84rem', fontWeight: '700' }}>
+            <Sparkles size={16} />
+            <span>1-Click Pre-filled Flight Presets (Instant Testing)</span>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '0.75rem' }}>
+            {presets.map((p, idx) => (
+              <button
+                key={idx}
+                type="button"
+                onClick={() => applyPreset(p)}
+                style={{
+                  padding: '0.75rem 1rem',
+                  backgroundColor: 'var(--bg-secondary)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: 'var(--radius-md)',
+                  textAlign: 'left',
+                  cursor: 'pointer',
+                  transition: 'all var(--transition-fast)',
+                }}
+                className="btn-interactive"
+              >
+                <div style={{ fontWeight: '700', fontSize: '0.88rem', color: 'var(--text-primary)' }}>
+                  {p.name}
+                </div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--accent-cyan)', fontFamily: 'var(--font-mono)', marginTop: '2px' }}>
+                  {p.origin} → {p.destination} • {p.aircraft}
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {error && <Alert variant="danger">{error}</Alert>}
+        {success && (
+          <Alert variant="success" title="Inventory Provisioned Successfully">
+            Flight {airlineCode} {flightNumber} has been hash-partitioned into the Citus cluster with {cabins.length} active cabin counters.
+          </Alert>
+        )}
+
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.75rem' }}>
+          {/* General Information Card */}
           <div
             style={{
-              backgroundColor: 'var(--bg-surface)',
+              backgroundColor: 'var(--bg-glass-card)',
               border: '1px solid var(--border-color)',
-              borderRadius: 'var(--radius-lg)',
-              padding: '3rem',
-              textAlign: 'center',
+              borderRadius: 'var(--radius-xl)',
+              padding: '1.75rem',
               display: 'flex',
               flexDirection: 'column',
-              alignItems: 'center',
-              gap: '1rem',
+              gap: '1.25rem',
+              backdropFilter: 'blur(16px)',
             }}
           >
-            <CheckCircle2 size={48} style={{ color: 'var(--status-success)' }} />
-            <h2 style={{ fontSize: '1.4rem' }}>Flight Record Successfully Created</h2>
-            <p style={{ color: 'var(--text-secondary)', maxWidth: '480px' }}>
-              Flight <strong style={{ color: 'var(--text-primary)' }}>{airlineCode} {flightNumber}</strong> ({origin} → {destination}) has been written to the Citus cluster and queued for read-model projection.
-            </p>
-            <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>
-              <Button variant="secondary" onClick={() => setSuccess(false)}>
-                Add Another Flight
-              </Button>
-              <Button variant="primary" onClick={() => navigate('/admin/flights')}>
-                View Flight List
-              </Button>
-            </div>
-          </div>
-        ) : (
-          <form
-            onSubmit={handleSubmit}
-            style={{
-              backgroundColor: 'var(--bg-surface)',
-              border: '1px solid var(--border-color)',
-              borderRadius: 'var(--radius-lg)',
-              padding: '2rem',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '1.5rem',
-              boxShadow: 'var(--shadow-md)',
-            }}
-          >
-            {error && <Alert variant="danger">{error}</Alert>}
+            <h3 style={{ fontSize: '1.15rem', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '0.75rem', margin: 0 }}>
+              Flight Routing & Timing
+            </h3>
 
-            {/* Flight Identification */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1.2fr 2fr', gap: '1rem' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.25rem' }}>
               <Input
-                label="Airline Code (2-3 chars)"
-                required
-                maxLength={3}
-                placeholder="PIA"
+                label="Airline Designator (ICAO/IATA)"
                 value={airlineCode}
-                onChange={(e) => setAirlineCode(e.target.value.toUpperCase())}
+                onChange={(e) => setAirlineCode(e.target.value)}
+                placeholder="PIA"
+                required
               />
               <Input
-                label="Flight Number"
-                required
-                placeholder="PK-785"
+                label="Flight Number Code"
                 value={flightNumber}
-                onChange={(e) => setFlightNumber(e.target.value.toUpperCase())}
+                onChange={(e) => setFlightNumber(e.target.value)}
+                placeholder="PK-785"
+                required
               />
               <Input
-                label="Aircraft Type"
-                required
-                placeholder="Boeing 777-300ER"
-                value={aircraftType}
-                onChange={(e) => setAircraftType(e.target.value)}
-              />
-            </div>
-
-            {/* Route & Dates */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1.5fr', gap: '1rem' }}>
-              <Input
-                label="Origin IATA Code"
-                required
-                maxLength={3}
-                placeholder="ISB"
+                label="Origin Airport IATA"
                 value={origin}
-                onChange={(e) => setOrigin(e.target.value.toUpperCase())}
+                onChange={(e) => setOrigin(e.target.value)}
+                placeholder="ISB"
+                required
               />
               <Input
-                label="Destination IATA Code"
-                required
-                maxLength={3}
-                placeholder="LHR"
+                label="Destination Airport IATA"
                 value={destination}
-                onChange={(e) => setDestination(e.target.value.toUpperCase())}
+                onChange={(e) => setDestination(e.target.value)}
+                placeholder="LHR"
+                required
               />
               <Input
-                label="Departure Date (Partition Key)"
+                label="Departure Calendar Date (UTC)"
                 type="date"
-                required
                 value={departureDate}
                 onChange={(e) => setDepartureDate(e.target.value)}
-              />
-            </div>
-
-            {/* Timestamps RFC 3339 */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-              <Input
-                label="Departure Time (RFC 3339 with Offset)"
                 required
-                placeholder="2026-11-03T06:30:00Z"
+              />
+              <Input
+                label="Aircraft Type Equipment"
+                value={aircraftType}
+                onChange={(e) => setAircraftType(e.target.value)}
+                placeholder="Boeing 777-300ER"
+                required
+              />
+              <Input
+                label="Departure Timestamp (ISO UTC)"
                 value={departureTime}
                 onChange={(e) => setDepartureTime(e.target.value)}
-                helper="Must include timezone offset (e.g. Z or +05:00)"
+                required
               />
               <Input
-                label="Arrival Time (RFC 3339 with Offset)"
-                required
-                placeholder="2026-11-03T14:45:00Z"
+                label="Arrival Timestamp (ISO UTC)"
                 value={arrivalTime}
                 onChange={(e) => setArrivalTime(e.target.value)}
-                helper="Flight schedule arrival instant"
-              />
-            </div>
-
-            {/* Base Price & Status */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem' }}>
-              <Input
-                label="Base Economy Price"
-                type="number"
-                min="0"
-                step="1"
                 required
-                value={basePrice}
-                onChange={(e) => setBasePrice(e.target.value)}
               />
+            </div>
+          </div>
 
-              <Input
-                label="Currency"
-                maxLength={3}
-                value={currency}
-                onChange={(e) => setCurrency(e.target.value.toUpperCase())}
-              />
-
+          {/* Cabin Inventory & Seat Quotas */}
+          <div
+            style={{
+              backgroundColor: 'var(--bg-glass-card)',
+              border: '1px solid var(--border-color)',
+              borderRadius: 'var(--radius-xl)',
+              padding: '1.75rem',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '1.25rem',
+              backdropFilter: 'blur(16px)',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div>
-                <label
-                  style={{
-                    display: 'block',
-                    fontSize: '0.85rem',
-                    fontWeight: '500',
-                    color: 'var(--text-secondary)',
-                    marginBottom: '0.35rem',
-                  }}
-                >
-                  Flight Status
-                </label>
-                <select
-                  value={status}
-                  onChange={(e) => setStatus(e.target.value)}
-                  style={{
-                    width: '100%',
-                    backgroundColor: 'var(--bg-secondary)',
-                    border: '1px solid var(--border-color)',
-                    borderRadius: 'var(--radius-md)',
-                    padding: '0.65rem 0.85rem',
-                    color: 'var(--text-primary)',
-                    fontSize: '0.95rem',
-                    outline: 'none',
-                  }}
-                >
-                  {Object.values(FLIGHT_STATUS).map((st) => (
-                    <option key={st} value={st} style={{ backgroundColor: '#0f172a' }}>
-                      {st}
-                    </option>
-                  ))}
-                </select>
+                <h3 style={{ fontSize: '1.15rem', margin: 0 }}>Cabin Inventory Slots & Pricing</h3>
+                <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>
+                  Each cabin establishes a row-level mutex counter in table <code className="mono-code">flight_inventory</code>.
+                </p>
               </div>
+              <Button type="button" variant="secondary" size="sm" icon={Plus} onClick={handleAddCabin}>
+                Add Cabin Class
+              </Button>
             </div>
 
-            {/* Cabins Section */}
-            <div
-              style={{
-                borderTop: '1px solid var(--border-subtle)',
-                paddingTop: '1.5rem',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '1rem',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <div>
-                  <h3 style={{ fontSize: '1.1rem' }}>Cabin Inventory Counters</h3>
-                  <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                    Each cabin row creates an independent row in Citus sharded inventory.
-                  </span>
-                </div>
-
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  icon={Plus}
-                  onClick={handleAddCabin}
-                  disabled={cabins.length >= CABINS.length}
-                >
-                  Add Cabin
-                </Button>
-              </div>
-
-              {cabins.map((c, idx) => (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+              {cabins.map((entry, idx) => (
                 <div
                   key={idx}
                   style={{
                     display: 'grid',
-                    gridTemplateColumns: '2fr 2fr 2fr auto',
+                    gridTemplateColumns: '1.5fr 1fr 1fr auto',
                     gap: '1rem',
-                    alignItems: 'end',
-                    padding: '1rem',
+                    alignItems: 'flex-end',
                     backgroundColor: 'var(--bg-secondary)',
+                    border: '1px solid var(--border-color)',
+                    padding: '1rem',
                     borderRadius: 'var(--radius-md)',
-                    border: '1px solid var(--border-subtle)',
                   }}
                 >
                   <div>
-                    <label style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Class</label>
+                    <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                      Cabin Tier
+                    </label>
                     <select
-                      value={c.cabin}
+                      value={entry.cabin}
                       onChange={(e) => handleCabinChange(idx, 'cabin', e.target.value)}
                       style={{
                         width: '100%',
-                        backgroundColor: 'var(--bg-surface)',
+                        backgroundColor: 'var(--bg-surface-elevated)',
                         border: '1px solid var(--border-color)',
-                        borderRadius: 'var(--radius-md)',
-                        padding: '0.55rem 0.75rem',
+                        borderRadius: 'var(--radius-sm)',
+                        padding: '0.45rem',
                         color: 'var(--text-primary)',
-                        fontSize: '0.9rem',
-                        marginTop: '0.25rem',
                       }}
                     >
-                      {CABINS.map((cab) => (
-                        <option key={cab} value={cab} style={{ backgroundColor: '#0f172a' }}>
-                          {cab}
-                        </option>
+                      {CABINS.map((c) => (
+                        <option key={c} value={c}>{c}</option>
                       ))}
                     </select>
                   </div>
 
-                  <div>
-                    <label style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Total Seats</label>
-                    <input
-                      type="number"
-                      min="1"
-                      max="1000"
-                      value={c.totalSeats}
-                      onChange={(e) => handleCabinChange(idx, 'totalSeats', e.target.value)}
-                      style={{
-                        width: '100%',
-                        backgroundColor: 'var(--bg-surface)',
-                        border: '1px solid var(--border-color)',
-                        borderRadius: 'var(--radius-md)',
-                        padding: '0.55rem 0.75rem',
-                        color: 'var(--text-primary)',
-                        fontSize: '0.9rem',
-                        marginTop: '0.25rem',
-                      }}
-                    />
-                  </div>
+                  <Input
+                    label="Seat Capacity"
+                    type="number"
+                    value={entry.totalSeats}
+                    onChange={(e) => handleCabinChange(idx, 'totalSeats', e.target.value)}
+                    required
+                  />
 
-                  <div>
-                    <label style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Price Override</label>
-                    <input
-                      type="number"
-                      min="0"
-                      value={c.price}
-                      onChange={(e) => handleCabinChange(idx, 'price', e.target.value)}
-                      style={{
-                        width: '100%',
-                        backgroundColor: 'var(--bg-surface)',
-                        border: '1px solid var(--border-color)',
-                        borderRadius: 'var(--radius-md)',
-                        padding: '0.55rem 0.75rem',
-                        color: 'var(--text-primary)',
-                        fontSize: '0.9rem',
-                        marginTop: '0.25rem',
-                      }}
-                    />
-                  </div>
+                  <Input
+                    label="Base Fare (USD)"
+                    type="number"
+                    value={entry.price}
+                    onChange={(e) => handleCabinChange(idx, 'price', e.target.value)}
+                    required
+                  />
 
-                  <Button
+                  <button
                     type="button"
-                    variant="danger"
-                    size="sm"
-                    icon={Trash2}
                     onClick={() => handleRemoveCabin(idx)}
                     disabled={cabins.length <= 1}
-                  />
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      color: cabins.length <= 1 ? 'var(--text-muted)' : 'var(--status-danger)',
+                      cursor: cabins.length <= 1 ? 'not-allowed' : 'pointer',
+                      padding: '0.5rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                    }}
+                  >
+                    <Trash2 size={18} />
+                  </button>
                 </div>
               ))}
             </div>
+          </div>
 
-            <Button
-              type="submit"
-              variant="primary"
-              size="lg"
-              loading={loading}
-              style={{ marginTop: '1rem' }}
-            >
-              Upsert Flight into Citus Write Model
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>
+            <Button type="button" variant="secondary" onClick={() => navigate('/admin/flights')}>
+              Cancel
             </Button>
-          </form>
-        )}
+            <Button type="submit" variant="primary" icon={CheckCircle2} loading={loading}>
+              Provision Flight Across Shards
+            </Button>
+          </div>
+        </form>
       </div>
     </div>
   );

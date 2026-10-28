@@ -62,7 +62,7 @@ export default function Select({
           {...props}
         >
           {placeholder && (
-            <option value="" disabled>
+            <option value="" disabled style={{ backgroundColor: '#ffffff', color: '#64748b' }}>
               {placeholder}
             </option>
           )}
@@ -70,7 +70,7 @@ export default function Select({
             const val = typeof opt === 'object' ? opt.value : opt;
             const text = typeof opt === 'object' ? opt.label : opt;
             return (
-              <option key={val} value={val} style={{ backgroundColor: '#0f172a', color: '#f8fafc' }}>
+              <option key={val} value={val} style={{ backgroundColor: '#ffffff', color: '#0f172a' }}>
                 {text}
               </option>
             );

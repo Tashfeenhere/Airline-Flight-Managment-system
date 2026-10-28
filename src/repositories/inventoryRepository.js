@@ -30,7 +30,7 @@ const { normaliseInventory } = require('./mappers');
 
 const COLUMNS = `
   flight_id, departure_date, cabin, shard_no, total_seats, available_seats,
-  held_seats, version, updated_at`;
+  held_seats, sold_seats, version, updated_at`;
 
 /** Aggregate shape shared by the availability and seat-map reads. */
 const CABIN_AGGREGATE = `
@@ -38,6 +38,7 @@ const CABIN_AGGREGATE = `
   SUM(total_seats)::int     AS total_seats,
   SUM(available_seats)::int AS available_seats,
   SUM(held_seats)::int      AS held_seats,
+  SUM(sold_seats)::int      AS sold_seats,
   MAX(version)::bigint      AS version,
   count(*)::int             AS shard_count`;
 
@@ -49,8 +50,8 @@ const CABIN_AGGREGATE = `
 async function ensure(client, { flightId, departureDate, cabin, shardNo = 0, totalSeats }) {
   const { rows } = await client.query(
     `INSERT INTO flight_inventory (
-       flight_id, departure_date, cabin, shard_no, total_seats, available_seats, held_seats
-     ) VALUES ($1, $2, $3, $4, $5, $5, 0)
+       flight_id, departure_date, cabin, shard_no, total_seats, available_seats, held_seats, sold_seats
+     ) VALUES ($1, $2, $3, $4, $5, $5, 0, 0)
      ON CONFLICT (flight_id, departure_date, cabin, shard_no) DO NOTHING
      RETURNING ${COLUMNS}`,
     [flightId, departureDate, cabin, shardNo, totalSeats]
@@ -147,6 +148,7 @@ async function confirm(client, { flightId, departureDate, cabin, shardNo = 0, co
   const { rows } = await client.query(
     `UPDATE flight_inventory
         SET held_seats = held_seats - $5,
+            sold_seats = sold_seats + $5,
             version    = version + 1,
             updated_at = now()
       WHERE flight_id = $1
@@ -189,23 +191,21 @@ async function release(client, { flightId, departureDate, cabin, shardNo = 0, co
  * Returns a *confirmed* seat to the pool — the cancellation path for a booking that
  * was already paid for.
  *
- * This is deliberately a different statement from `release`. A confirmed seat is not
- * held: it left `held_seats` when the payment was captured, so releasing it would find
- * nothing to move and silently do nothing. Reclaiming adds to `available_seats`, and
- * the guard `available + held + count <= total` is what makes a double reclaim
- * impossible — the second attempt updates zero rows instead of inventing a seat.
+ * Reclaiming moves seats from `sold_seats` to `available_seats`.
+ * The guard `sold_seats >= count` is what makes double reclaim impossible.
  */
 async function reclaim(client, { flightId, departureDate, cabin, shardNo = 0, count = 1 }) {
   const { rows } = await client.query(
     `UPDATE flight_inventory
         SET available_seats = available_seats + $5,
+            sold_seats      = sold_seats - $5,
             version         = version + 1,
             updated_at      = now()
       WHERE flight_id = $1
         AND departure_date = $2
         AND cabin = $3
         AND shard_no = $4
-        AND available_seats + held_seats + $5 <= total_seats
+        AND sold_seats >= $5
       RETURNING ${COLUMNS}`,
     [flightId, departureDate, cabin, shardNo, count]
   );
@@ -282,7 +282,20 @@ async function audit(client, { flightId = null, departureDate = null, cabin = nu
   // The scope is applied to the inventory side, which is the driving table: every
   // finding is a counter row that disagrees with the bookings, so a counter outside
   // the scope can produce no in-scope finding. Filtering the bookings CTE instead
-  // would be wrong — it would hide the bookings that cause a mismatch.
+  // When unconstrained ($1, $2, $3 are NULL), scanning 22M+ rows across 51 partitions
+  // exceeds the statement timeout. Restricting to flights with active bookings or held seats
+  // checks every candidate for an oversell/mismatch in milliseconds.
+  const hasScope = Boolean(flightId || departureDate || cabin);
+  const whereScope = hasScope
+    ? `WHERE ($1::uuid IS NULL OR flight_id = $1)
+         AND ($2::date IS NULL OR departure_date = $2)
+         AND ($3::text IS NULL OR cabin = $3)`
+    : `WHERE flight_id IN (
+         SELECT flight_id FROM bookings WHERE status IN ('PENDING', 'CONFIRMED')
+         UNION
+         SELECT flight_id FROM flight_inventory WHERE held_seats > 0
+       )`;
+
   const { rows } = await client.query(
     `WITH inv AS (
        SELECT flight_id, departure_date, cabin,
@@ -290,9 +303,7 @@ async function audit(client, { flightId = null, departureDate = null, cabin = nu
               SUM(available_seats)::int AS available_seats,
               SUM(held_seats)::int      AS held_seats
          FROM flight_inventory
-        WHERE ($1::uuid IS NULL OR flight_id = $1)
-          AND ($2::date IS NULL OR departure_date = $2)
-          AND ($3::text IS NULL OR cabin = $3)
+        ${whereScope}
         GROUP BY flight_id, departure_date, cabin
      ), live AS (
        SELECT flight_id, departure_date, cabin,
@@ -326,7 +337,7 @@ async function audit(client, { flightId = null, departureDate = null, cabin = nu
         AND live.departure_date = inv.departure_date
         AND live.cabin = inv.cabin
       ORDER BY inv.departure_date, inv.flight_id, inv.cabin`,
-    [flightId, departureDate, cabin]
+    hasScope ? [flightId, departureDate, cabin] : []
   );
 
   const violations = rows.filter((row) => row.violation !== null);

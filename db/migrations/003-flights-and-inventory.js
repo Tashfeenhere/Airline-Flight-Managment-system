@@ -96,10 +96,14 @@ module.exports = {
     await client.query(`
       CREATE INDEX IF NOT EXISTS idx_flights_number_date
         ON flights (flight_number, departure_date);
+    `);
 
+    await client.query(`
       CREATE INDEX IF NOT EXISTS idx_flights_route_date
         ON flights (origin, destination, departure_date);
+    `);
 
+    await client.query(`
       CREATE INDEX IF NOT EXISTS idx_flights_status_date
         ON flights (status, departure_date);
     `);

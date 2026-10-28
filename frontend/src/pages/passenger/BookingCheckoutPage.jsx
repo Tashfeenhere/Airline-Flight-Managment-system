@@ -9,12 +9,14 @@ import Input from '../../components/ui/Input';
 import Button from '../../components/ui/Button';
 import Spinner from '../../components/ui/Spinner';
 import Alert from '../../components/ui/Alert';
+import { useToast } from '../../components/ui/Toast';
 
 export default function BookingCheckoutPage() {
   const { flightId } = useParams();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { user } = useAuthStore();
+  const toast = useToast();
 
   const cabin = searchParams.get('cabin') || 'ECONOMY';
   const preSelectedSeat = searchParams.get('seat') || '';
@@ -24,12 +26,12 @@ export default function BookingCheckoutPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
 
-  // Form Fields
-  const [passengerName, setPassengerName] = useState(user?.fullName || '');
+  // Form Fields with Reliable Pre-filled Defaults for Easy Testing
+  const [passengerName, setPassengerName] = useState(user?.fullName || 'Ada Lovelace');
   const [passengerRef, setPassengerRef] = useState('PASS-' + Math.floor(1000 + Math.random() * 9000));
   const [seatNumber, setSeatNumber] = useState(preSelectedSeat || '14A');
-  const [contactEmail, setContactEmail] = useState(user?.email || '');
-  const [contactPhone, setContactPhone] = useState(user?.phone || '');
+  const [contactEmail, setContactEmail] = useState(user?.email || 'ada.lovelace@example.com');
+  const [contactPhone, setContactPhone] = useState(user?.phone || '+1 (555) 019-2834');
 
   // Stable Idempotency Key per checkout session
   const [idempotencyKey] = useState(() => {
@@ -74,14 +76,28 @@ export default function BookingCheckoutPage() {
 
       const res = await bookingsApi.createBooking(payload, idempotencyKey);
       if (res.success && res.data) {
+        toast.success(`Reservation confirmed for flight ${flight?.flightNumber || ''}! Reference: ${res.data.bookingReference}`, 'Seat Reserved');
         navigate(`/bookings/${res.data.bookingId}/confirmation`);
       }
     } catch (err) {
-      setError(
-        err.error?.message ||
-          err.message ||
-          'Failed to reserve seat. The seat may have been booked by a concurrent transaction. Please select another seat.'
-      );
+      const errBody = err.error || err;
+      const code = errBody.code || '';
+      let msg = errBody.message || err.message;
+
+      if (code === 'SEAT_UNAVAILABLE') {
+        msg = `Seat ${seatNumber.trim().toUpperCase()} is already held or reserved by another passenger. Please pick a different seat.`;
+      } else if (code === 'SOLD_OUT') {
+        msg = `The requested cabin (${cabin}) is now fully sold out on this flight.`;
+      } else if (code === 'DUPLICATE_BOOKING') {
+        msg = 'A booking with this idempotency key or booking reference already exists.';
+      } else if (code === 'PAYMENT_FAILED') {
+        msg = `Payment declined by gateway: ${errBody.details?.reason || 'Authorization check failed'}. The held seat has been safely released.`;
+      } else if (!msg) {
+        msg = 'Unable to complete reservation. The seat may have been booked by a concurrent transaction. Please select another seat.';
+      }
+
+      toast.error(msg, 'Reservation Notice');
+      setError(msg);
     } finally {
       setSubmitting(false);
     }

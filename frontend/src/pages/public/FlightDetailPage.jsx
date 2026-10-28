@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
-import { Plane, Calendar, Clock, ArrowRight, ShieldCheck, ChevronLeft } from 'lucide-react';
+import { Plane, Calendar, Clock, ArrowRight, ShieldCheck, ChevronLeft, Lock, LogIn } from 'lucide-react';
 import { flightsApi } from '../../api/flights';
 import { useSearchStore } from '../../stores/searchStore';
+import { useAuthStore } from '../../stores/authStore';
+import { useToast } from '../../components/ui/Toast';
 import { formatTime, formatDate, calculateDuration, formatCurrency } from '../../utils/formatters';
 import CabinSelector from '../../components/flights/CabinSelector';
 import SeatMap from '../../components/flights/SeatMap';
@@ -27,6 +29,9 @@ export default function FlightDetailPage() {
   const [error, setError] = useState(null);
 
   const { setSelectedSeat: saveSelectedSeat, setSelectedCabin: saveSelectedCabin } = useSearchStore();
+  const { isAuthenticated } = useAuthStore();
+  const toast = useToast();
+  const authenticated = isAuthenticated();
 
   useEffect(() => {
     let isMounted = true;
@@ -84,7 +89,20 @@ export default function FlightDetailPage() {
     if (selectedSeat) {
       saveSelectedSeat(selectedSeat);
     }
-    navigate(`/flights/${flightId}/book?cabin=${selectedCabin}&seat=${selectedSeat || ''}`);
+    const bookingPath = `/flights/${flightId}/book?cabin=${selectedCabin}&seat=${selectedSeat || ''}`;
+    if (!authenticated) {
+      toast.info('Please sign in or create an account to proceed with booking seats.', 'Sign In Required');
+      navigate('/auth/signin', {
+        state: {
+          from: {
+            pathname: `/flights/${flightId}/book`,
+            search: `?cabin=${selectedCabin}&seat=${selectedSeat || ''}`
+          }
+        }
+      });
+      return;
+    }
+    navigate(bookingPath);
   };
 
   if (loading) {
@@ -327,15 +345,23 @@ export default function FlightDetailPage() {
           </div>
         </div>
 
-        <Button
-          variant="primary"
-          size="lg"
-          onClick={handleProceedToBooking}
-          icon={ArrowRight}
-          iconPosition="right"
-        >
-          Continue to Passenger Details
-        </Button>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.35rem' }}>
+          <Button
+            variant="primary"
+            size="lg"
+            onClick={handleProceedToBooking}
+            icon={authenticated ? ArrowRight : LogIn}
+            iconPosition="right"
+          >
+            {authenticated ? 'Continue to Passenger Details' : 'Sign In to Book Flight'}
+          </Button>
+          {!authenticated && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.74rem', color: 'var(--text-muted)' }}>
+              <Lock size={12} style={{ color: 'var(--accent-primary)' }} />
+              Sign in required to reserve seats
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

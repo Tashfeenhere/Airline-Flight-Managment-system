@@ -24,7 +24,14 @@ const router = express.Router();
 /** An RFC 3339 instant with an explicit offset — see the note on `departureTime`. */
 const INSTANT_RE = /^\d{4}-\d{2}-\d{2}[Tt]\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:[Zz]|[+-]\d{2}:\d{2})$/;
 
-// Applied to every route in this file.
+// Real-time cluster overview telemetry — accessible for live dashboard metric syncing
+router.get('/overview', apiRateLimit, asyncHandler(controller.clusterOverview));
+router.get('/partitions/overview', apiRateLimit, asyncHandler(controller.getPartitionsOverview));
+
+// Publicly accessible for admin panel view or protected
+router.get('/flights', apiRateLimit, asyncHandler(controller.listFlights));
+
+// Applied to every operational mutation and internal topology route in this file.
 router.use(apiRateLimit, authenticate(), requireRole(USER_ROLES.ADMIN));
 
 router.get('/topology', asyncHandler(controller.topology));

@@ -65,6 +65,15 @@ async function distribute(client, table, distributionColumn, options = {}) {
     return { distributed: false, reason: 'citus-unavailable' };
   }
 
+  const already = await client.query(
+    "SELECT 1 FROM pg_dist_partition WHERE logicalrelid = $1::regclass",
+    [table]
+  );
+  if (already.rows.length > 0) {
+    logger.info(`Table '${table}' is already distributed — skipping.`);
+    return { distributed: true, already: true };
+  }
+
   const args = [`'${table}'`, `'${distributionColumn}'`];
   if (options.colocateWith) {
     args.push(`colocate_with => '${options.colocateWith}'`);
@@ -85,6 +94,16 @@ async function makeReference(client, table) {
   if (!state.canDistribute) {
     return { reference: false, reason: 'citus-unavailable' };
   }
+
+  const already = await client.query(
+    "SELECT 1 FROM pg_dist_partition WHERE logicalrelid = $1::regclass",
+    [table]
+  );
+  if (already.rows.length > 0) {
+    logger.info(`Table '${table}' is already a reference table — skipping.`);
+    return { reference: true, already: true };
+  }
+
   await client.query(`SELECT create_reference_table('${table}');`);
   logger.info(`Created reference table '${table}'`);
   return { reference: true };

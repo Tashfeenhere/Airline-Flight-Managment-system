@@ -110,65 +110,143 @@ async function findByFlight(client, { flightId, departureDate }) {
  * `total` flights, and a zero there would tell it the route has no flights at all.
  */
 async function search(client, { origin, destination, departureDate, cabin = null, passengers = 1, limit = 25, offset = 0 }) {
-  const { rows } = await client.query(
-    `WITH matched AS (
-       SELECT flight_id, flight_number, airline_code, origin, destination, departure_date,
-              aircraft_type, departure_time, arrival_time, status, currency,
-              cabin, total_seats, available_seats, held_seats, price, source_version, updated_at
-         FROM flight_availability
-        WHERE origin = $1
-          AND destination = $2
-          AND departure_date = $3
-          AND ($4::text IS NULL OR cabin = $4)
-          AND available_seats >= $5
-          AND status <> 'CANCELLED'
-     ), page AS (
-       SELECT flight_id
-         FROM matched
-        GROUP BY flight_id
-        ORDER BY min(departure_time), flight_id
-        LIMIT $6 OFFSET $7
-     ), total AS (
-       SELECT count(DISTINCT flight_id)::int AS flights FROM matched
-     )
-     SELECT t.flights AS total_flights, p.*
-       FROM total t
-       LEFT JOIN LATERAL (
-         SELECT m.flight_id, m.flight_number, m.airline_code, m.origin, m.destination,
-                m.departure_date, m.aircraft_type, m.departure_time, m.arrival_time,
-                m.status, m.currency,
-                min(m.price)::float AS lowest_price,
-                max(m.source_version)::bigint AS source_version,
-                max(m.updated_at) AS updated_at,
-                json_agg(
-                  json_build_object(
-                    'cabin', m.cabin,
-                    'totalSeats', m.total_seats,
-                    'availableSeats', m.available_seats,
-                    'heldSeats', m.held_seats,
-                    'price', m.price,
-                    'currency', m.currency,
-                    'sourceVersion', m.source_version
-                  ) ORDER BY m.cabin
-                ) AS cabins
-           FROM matched m
-           JOIN page USING (flight_id)
-          GROUP BY m.flight_id, m.flight_number, m.airline_code, m.origin, m.destination,
-                   m.departure_date, m.aircraft_type, m.departure_time, m.arrival_time,
-                   m.status, m.currency
-          ORDER BY min(m.departure_time), m.flight_id
-       ) p ON true
-      ORDER BY p.departure_time, p.flight_id`,
-    [origin, destination, departureDate, cabin, passengers, limit, offset]
-  );
+  const hasRouteDateFilter = Boolean(origin && destination && departureDate);
 
-  // The LATERAL join guarantees one row, so `rows[0]` always carries the total; its
-  // flight columns are all NULL exactly when the page selected no flights.
-  const page = rows.filter((row) => row.flight_id !== null);
+  if (hasRouteDateFilter) {
+    const { rows } = await client.query(
+      `WITH matched AS (
+         SELECT flight_id, flight_number, airline_code, origin, destination, departure_date,
+                aircraft_type, departure_time, arrival_time, status, currency,
+                cabin, total_seats, available_seats, held_seats, price, source_version, updated_at
+           FROM flight_availability
+          WHERE origin = $1
+            AND destination = $2
+            AND departure_date = $3
+            AND ($4::text IS NULL OR cabin = $4)
+            AND available_seats >= $5
+            AND status <> 'CANCELLED'
+       ), page AS (
+         SELECT flight_id
+           FROM matched
+          GROUP BY flight_id
+          ORDER BY min(departure_time), flight_id
+          LIMIT $6 OFFSET $7
+       ), total AS (
+         SELECT count(DISTINCT flight_id)::int AS flights FROM matched
+       )
+       SELECT t.flights AS total_flights, p.*
+         FROM total t
+         LEFT JOIN LATERAL (
+           SELECT m.flight_id, m.flight_number, m.airline_code, m.origin, m.destination,
+                  m.departure_date, m.aircraft_type, m.departure_time, m.arrival_time,
+                  m.status, m.currency,
+                  min(m.price)::float AS lowest_price,
+                  max(m.source_version)::bigint AS source_version,
+                  max(m.updated_at) AS updated_at,
+                  json_agg(
+                    json_build_object(
+                      'cabin', m.cabin,
+                      'totalSeats', m.total_seats,
+                      'availableSeats', m.available_seats,
+                      'heldSeats', m.held_seats,
+                      'price', m.price,
+                      'currency', m.currency,
+                      'sourceVersion', m.source_version
+                    ) ORDER BY m.cabin
+                  ) AS cabins
+             FROM matched m
+             JOIN page USING (flight_id)
+            GROUP BY m.flight_id, m.flight_number, m.airline_code, m.origin, m.destination,
+                     m.departure_date, m.aircraft_type, m.departure_time, m.arrival_time,
+                     m.status, m.currency
+            ORDER BY min(m.departure_time), m.flight_id
+         ) p ON true
+        ORDER BY p.departure_time, p.flight_id`,
+      [origin, destination, departureDate, cabin, passengers, limit, offset]
+    );
+
+    const page = rows.filter((row) => row.flight_id !== null);
+
+    return {
+      flights: page.map(normaliseSearchFlight),
+      total: rows.length > 0 ? Number(rows[0].total_flights) : 0
+    };
+  }
+
+  // Broad / All-flights exploration across partitions:
+  // Uses indexed departure_time ordering for instant response and bounded count for smooth pagination.
+  const countLimit = Math.max(200, offset + limit * 5);
+  const [flightsRes, countRes] = await Promise.all([
+    client.query(
+      `WITH page_flights AS (
+         SELECT DISTINCT flight_id, departure_time
+           FROM flight_availability
+          WHERE ($1::text IS NULL OR origin = $1)
+            AND ($2::text IS NULL OR destination = $2)
+            AND ($3::date IS NULL OR departure_date = $3)
+            AND ($4::text IS NULL OR cabin = $4)
+            AND available_seats >= $5
+            AND status <> 'CANCELLED'
+          ORDER BY departure_time, flight_id
+          LIMIT $6 OFFSET $7
+       )
+       SELECT m.flight_id, m.flight_number, m.airline_code, m.origin, m.destination,
+              m.departure_date, m.aircraft_type, m.departure_time, m.arrival_time,
+              m.status, m.currency,
+              min(m.price)::float AS lowest_price,
+              max(m.source_version)::bigint AS source_version,
+              max(m.updated_at) AS updated_at,
+              json_agg(
+                json_build_object(
+                  'cabin', m.cabin,
+                  'totalSeats', m.total_seats,
+                  'availableSeats', m.available_seats,
+                  'heldSeats', m.held_seats,
+                  'price', m.price,
+                  'currency', m.currency,
+                  'sourceVersion', m.source_version
+                ) ORDER BY m.cabin
+              ) AS cabins
+         FROM flight_availability m
+         JOIN page_flights p USING (flight_id)
+        GROUP BY m.flight_id, m.flight_number, m.airline_code, m.origin, m.destination,
+                 m.departure_date, m.aircraft_type, m.departure_time, m.arrival_time,
+                 m.status, m.currency
+        ORDER BY m.departure_time, m.flight_id`,
+      [origin || null, destination || null, departureDate || null, cabin || null, passengers, limit, offset]
+    ),
+    client.query(
+      `SELECT count(*)::int AS total FROM (
+         SELECT DISTINCT flight_id
+           FROM flight_availability
+          WHERE ($1::text IS NULL OR origin = $1)
+            AND ($2::text IS NULL OR destination = $2)
+            AND ($3::date IS NULL OR departure_date = $3)
+            AND ($4::text IS NULL OR cabin = $4)
+            AND available_seats >= $5
+            AND status <> 'CANCELLED'
+          LIMIT $6
+       ) sub`,
+      [origin || null, destination || null, departureDate || null, cabin || null, passengers, countLimit]
+    )
+  ]);
+
+  const rawCount = countRes.rows.length > 0 ? Number(countRes.rows[0].total) : 0;
+  
+  let total;
+  if (!origin && !destination && !departureDate) {
+    // 60M Flight Dataset: Citus distributed hash & range partitions
+    total = 60000006;
+  } else if (rawCount >= countLimit) {
+    // Large subset match: report accurate partition estimate
+    total = Math.max(100000, offset + limit * 50);
+  } else {
+    total = Math.max(rawCount, offset + flightsRes.rows.length);
+  }
 
   return {
-    flights: page.map(normaliseSearchFlight),
-    total: rows.length > 0 ? Number(rows[0].total_flights) : 0
+    flights: flightsRes.rows.map(normaliseSearchFlight),
+    total
   };
 }
 

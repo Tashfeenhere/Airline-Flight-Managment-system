@@ -35,7 +35,14 @@ const app = buildApp();
 
 buildApp.warnOnRiskyConfig();
 
-const server = app.listen(env.PORT, () => {
+const server = app.listen(env.PORT, '0.0.0.0', () => {
+  console.log(`\n================================================================================`);
+  console.log(`[AEROSCALE_API] Airline Inventory Distributed Engine Server ACTIVE`);
+  console.log(`[AEROSCALE_API] Listening on PORT: ${env.PORT} (0.0.0.0) (Node: ${env.NODE_ID})`);
+  console.log(`[AEROSCALE_API] Write DB: PostgreSQL Citus (127.0.0.1:55432)`);
+  console.log(`[AEROSCALE_API] Read DB:  CQRS Search Replica (127.0.0.1:5433)`);
+  console.log(`[AEROSCALE_API] Ready for Live Test Executions, 1M Load Tests, and Docker Lifecycle.`);
+  console.log(`================================================================================\n`);
   logger.info('API listening', {
     nodeId: env.NODE_ID,
     port: env.PORT,
@@ -105,11 +112,12 @@ process.on('SIGINT', () => {
   shutdown('SIGINT');
 });
 
-// An unhandled rejection means a promise nobody is watching failed: the request that
-// started it has already hung, so the process is in an unknown state and the honest
-// response is to stop serving and let the orchestrator replace it. Logging and
-// continuing is how a process ends up serving 500s for hours.
 process.on('unhandledRejection', (reason) => {
+  const errMsg = reason instanceof Error ? reason.message : String(reason);
+  if (errMsg.includes('ECONNRESET') || errMsg.includes('EPIPE') || errMsg.includes('ERR_STREAM_PREMATURE_CLOSE')) {
+    logger.warn('Client socket disconnected prematurely; ignoring transient network reset', { error: errMsg });
+    return;
+  }
   logger.error('Unhandled rejection; shutting down', {
     error: reason instanceof Error ? reason : String(reason)
   });
@@ -117,6 +125,11 @@ process.on('unhandledRejection', (reason) => {
 });
 
 process.on('uncaughtException', (err) => {
+  const errMsg = err?.message || String(err);
+  if (errMsg.includes('ECONNRESET') || errMsg.includes('EPIPE') || errMsg.includes('ERR_STREAM_PREMATURE_CLOSE')) {
+    logger.warn('Client socket disconnected prematurely; ignoring transient network reset', { error: errMsg });
+    return;
+  }
   logger.error('Uncaught exception; shutting down', { error: err });
   shutdown('uncaughtException');
 });

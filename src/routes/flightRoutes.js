@@ -29,10 +29,11 @@ router.get(
       // Three letters, either case: the write model stores IATA codes uppercase, and
       // the controller uppercases before querying, so accepting "isb" from a human is
       // not a validation error — it is the same airport.
-      origin: { type: 'string', required: true, trim: true, pattern: /^[A-Za-z]{3}$/ },
-      destination: { type: 'string', required: true, trim: true, pattern: /^[A-Za-z]{3}$/ },
-      departureDate: { type: 'date', required: true },
-      cabin,
+      // Optional airport codes (empty or 3 letters)
+      origin: { type: 'string', required: false, trim: true, pattern: /^$|^[A-Za-z]{3}$/ },
+      destination: { type: 'string', required: false, trim: true, pattern: /^$|^[A-Za-z]{3}$/ },
+      departureDate: { type: 'date', required: false },
+      cabin: { type: 'string', enum: [...CABINS, ''], required: false },
       passengers: { type: 'integer', min: 1, max: 9, default: 1 },
       limit,
       offset

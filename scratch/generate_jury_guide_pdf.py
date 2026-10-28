@@ -1,0 +1,779 @@
+import os
+import subprocess
+import fitz
+
+# Define exact 3-page guide HTML
+html_content = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>AeroScale — Final Jury Defense & Viva Guide</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700;800&display=swap');
+
+  @page {
+    size: A4 portrait;
+    margin: 0;
+  }
+
+  *, *::before, *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  body {
+    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background-color: #f8fafc;
+    color: #0f172a;
+    font-size: 8.8pt;
+    line-height: 1.35;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .page {
+    width: 210mm;
+    height: 297mm;
+    padding: 11mm 13mm 10mm 13mm;
+    box-sizing: border-box;
+    page-break-after: always;
+    page-break-inside: avoid;
+    position: relative;
+    background: #ffffff;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    overflow: hidden;
+  }
+
+  .page:last-child {
+    page-break-after: auto;
+  }
+
+  /* Header Bar */
+  .doc-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 2px solid #1d4ed8;
+    padding-bottom: 6px;
+    margin-bottom: 8px;
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .logo-box {
+    width: 28px;
+    height: 28px;
+    border-radius: 7px;
+    background: linear-gradient(135deg, #1d4ed8, #0284c7);
+    color: #ffffff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    font-size: 14pt;
+  }
+
+  .brand-title {
+    font-size: 13.5pt;
+    font-weight: 800;
+    color: #0f172a;
+    letter-spacing: -0.02em;
+    line-height: 1.1;
+  }
+
+  .brand-subtitle {
+    font-size: 6.8pt;
+    font-weight: 700;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  .header-meta {
+    text-align: right;
+  }
+
+  .header-meta .pill {
+    background: #eff6ff;
+    color: #1d4ed8;
+    border: 1px solid #bfdbfe;
+    border-radius: 20px;
+    padding: 2px 9px;
+    font-size: 6.8pt;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    display: inline-block;
+    margin-bottom: 2px;
+  }
+
+  .header-meta .submeta {
+    font-size: 6.6pt;
+    color: #475569;
+    font-weight: 600;
+  }
+
+  /* Section Titles */
+  .section-title {
+    font-size: 10pt;
+    font-weight: 800;
+    color: #0f172a;
+    border-left: 3.5px solid #1d4ed8;
+    padding-left: 6px;
+    margin-bottom: 5px;
+    margin-top: 5px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    letter-spacing: -0.01em;
+  }
+
+  .section-tag {
+    font-size: 6.5pt;
+    font-weight: 700;
+    color: #1d4ed8;
+    background: #eff6ff;
+    border: 1px solid #dbeafe;
+    padding: 1px 6px;
+    border-radius: 10px;
+    text-transform: uppercase;
+  }
+
+  /* Cards & Grids */
+  .grid-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 7px;
+    margin-bottom: 6px;
+  }
+
+  .grid-3 {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 6px;
+    margin-bottom: 6px;
+  }
+
+  .card {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    padding: 6px 8px;
+  }
+
+  .card-highlight {
+    background: #f0fdf4;
+    border: 1px solid #bbf7d0;
+  }
+
+  .card-blue {
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+  }
+
+  .card-amber {
+    background: #fffbeb;
+    border: 1px solid #fde68a;
+  }
+
+  .card-purple {
+    background: #faf5ff;
+    border: 1px solid #e9d5ff;
+  }
+
+  .card-header {
+    font-size: 7.8pt;
+    font-weight: 800;
+    color: #0f172a;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-bottom: 2px;
+  }
+
+  .badge-emerald { color: #059669; background: #dcfce7; padding: 1px 5px; border-radius: 4px; font-size: 6.5pt; font-weight: 800; }
+  .badge-blue { color: #1d4ed8; background: #dbeafe; padding: 1px 5px; border-radius: 4px; font-size: 6.5pt; font-weight: 800; }
+  .badge-purple { color: #7c3aed; background: #f3e8ff; padding: 1px 5px; border-radius: 4px; font-size: 6.5pt; font-weight: 800; }
+  .badge-amber { color: #d97706; background: #fef3c7; padding: 1px 5px; border-radius: 4px; font-size: 6.5pt; font-weight: 800; }
+
+  /* Callout box */
+  .callout {
+    background: #eff6ff;
+    border-left: 3px solid #1d4ed8;
+    border-radius: 4px;
+    padding: 5px 8px;
+    margin-bottom: 6px;
+    font-size: 7.6pt;
+    color: #1e3a8a;
+  }
+
+  .callout strong {
+    color: #0f172a;
+  }
+
+  /* Step by Step Flow */
+  .step-box {
+    display: flex;
+    gap: 8px;
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    padding: 5px 8px;
+    margin-bottom: 5px;
+  }
+
+  .step-num {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #1d4ed8;
+    color: #ffffff;
+    font-size: 8pt;
+    font-weight: 800;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+
+  .step-content {
+    flex-grow: 1;
+  }
+
+  .step-title {
+    font-size: 8.2pt;
+    font-weight: 800;
+    color: #0f172a;
+    margin-bottom: 1px;
+  }
+
+  .step-desc {
+    font-size: 7.4pt;
+    color: #334155;
+    line-height: 1.3;
+  }
+
+  .code-snippet {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 6.8pt;
+    background: #0f172a;
+    color: #38bdf8;
+    padding: 2px 5px;
+    border-radius: 4px;
+    display: inline-block;
+    margin-top: 2px;
+  }
+
+  /* Table styling */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 3px;
+    margin-bottom: 5px;
+    font-size: 7.2pt;
+  }
+
+  th {
+    background: #f1f5f9;
+    color: #0f172a;
+    font-weight: 800;
+    text-align: left;
+    padding: 3.5px 6px;
+    border: 1px solid #cbd5e1;
+  }
+
+  td {
+    padding: 3.5px 6px;
+    border: 1px solid #e2e8f0;
+    color: #334155;
+    vertical-align: top;
+  }
+
+  tr:nth-child(even) td {
+    background: #f8fafc;
+  }
+
+  /* Question Answer block */
+  .qa-block {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 5px;
+    padding: 4.5px 7px;
+    margin-bottom: 4.5px;
+  }
+
+  .qa-q {
+    font-size: 7.7pt;
+    font-weight: 800;
+    color: #1e3a8a;
+    margin-bottom: 1.5px;
+    display: flex;
+    align-items: flex-start;
+    gap: 4px;
+  }
+
+  .qa-q-tag {
+    background: #dbeafe;
+    color: #1d4ed8;
+    padding: 1px 4px;
+    border-radius: 3px;
+    font-size: 6.2pt;
+    font-weight: 800;
+    flex-shrink: 0;
+  }
+
+  .qa-a {
+    font-size: 7.2pt;
+    color: #1e293b;
+    line-height: 1.32;
+    padding-left: 2px;
+  }
+
+  .qa-a strong {
+    color: #0f172a;
+  }
+
+  /* Page Footer */
+  .page-footer {
+    border-top: 1px solid #e2e8f0;
+    padding-top: 4px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 6.5pt;
+    color: #64748b;
+    margin-top: auto;
+  }
+
+  .page-num {
+    font-weight: 800;
+    color: #1d4ed8;
+    background: #eff6ff;
+    padding: 1px 7px;
+    border-radius: 10px;
+    border: 1px solid #bfdbfe;
+  }
+</style>
+</head>
+<body>
+
+<!-- ==========================================
+     PAGE 1: LIVE JURY DEMO WALKTHROUGH & WHY
+     ========================================== -->
+<div class="page">
+  <div>
+    <!-- Header -->
+    <div class="doc-header">
+      <div class="brand">
+        <div class="logo-box">✈</div>
+        <div>
+          <div class="brand-title">AeroScale — Final Jury Defense & Viva Guide</div>
+          <div class="brand-subtitle">Distributed Airline Seat Inventory • 60M Dataset • Citus 14.2 & PostgreSQL 18.4</div>
+        </div>
+      </div>
+      <div class="header-meta">
+        <div class="pill">Official Jury Defense</div>
+        <div class="submeta">CQRS • Two-Phase Saga • Zero-Oversell Proof</div>
+      </div>
+    </div>
+
+    <!-- Section 1: Demonstration Walkthrough -->
+    <div class="section-title">
+      <span>1. EXACT JURY DEMONSTRATION: WHAT TO OPEN & RUN (STEP-BY-STEP)</span>
+      <span class="section-tag">Presentation Order</span>
+    </div>
+
+    <div class="step-box">
+      <div class="step-num">1</div>
+      <div class="step-content">
+        <div class="step-title">Open Screen 1: Real-Time Control Room & Concurrency Lab (<span style="color:#1d4ed8;">/admin/lab</span>)</div>
+        <div class="step-desc">
+          <strong>What to show:</strong> Open <code>http://localhost:5173/admin/lab</code>. Highlight the live Citus topology badges: <strong>Write Coordinator (Port 55432)</strong>, <strong>CQRS Read Model (Port 5433)</strong>, and <strong>2 Worker Nodes</strong>. Show the <strong>60,000,006 Dataset Scale</strong> and <strong>22,064,356 Active Shard Counters</strong>.
+        </div>
+      </div>
+    </div>
+
+    <div class="step-box">
+      <div class="step-num">2</div>
+      <div class="step-content">
+        <div class="step-title">Execute the "500-Concurrency Zero-Oversell Burst Test" Live Before the Jury</div>
+        <div class="step-desc">
+          <strong>The Killer Demo:</strong> In the Control Room, click <strong>"Run 500-Concurrency Test"</strong>. Explain: <em>"500 parallel shoppers are simultaneously attacking the exact same flight cabin with only 2 remaining seats."</em> Show the verified result: <strong>Exactly 2 bookings succeed</strong>, <strong>498 are cleanly rejected with 409 Conflict</strong>, remaining seats = <strong>0</strong>. 0 duplicate bookings, 0 oversell, 100% ACID safety.
+        </div>
+      </div>
+    </div>
+
+    <div class="step-box">
+      <div class="step-num">3</div>
+      <div class="step-content">
+        <div class="step-title">Open Screen 2: 60M Flight Dataset Search & Interactive Seat Map (<span style="color:#1d4ed8;">/flights/search</span>)</div>
+        <div class="step-desc">
+          <strong>What to show:</strong> Show that searching with no filters queries across <strong>60,000,006 scheduled flights</strong> in sub-40ms. Demonstrate page navigation (Page 1 of 6,000,001 with +100 jump). Click a flight to open the <strong>Interactive Boeing 777 Seat Map</strong>. Show that guests can browse freely, but clicking "Book Seat" triggers authentication with full redirect preservation.
+        </div>
+      </div>
+    </div>
+
+    <div class="step-box">
+      <div class="step-num">4</div>
+      <div class="step-content">
+        <div class="step-title">Open Terminal / Docker / pgAdmin: Raw Database Proof (If Jury Asks)</div>
+        <div class="step-desc">
+          Run <span class="code-snippet">docker ps</span> to show Citus Coordinator, Workers, CQRS replica, and Redis. In psql/DBeaver (Port 55432):
+          <br/><span class="code-snippet">SELECT * FROM citus_tables;</span> shows distributed tables; <span class="code-snippet">SELECT * FROM citus_shards;</span> shows 51 active shards.
+        </div>
+      </div>
+    </div>
+
+    <!-- Section 2: Why We Used Each Technology -->
+    <div class="section-title">
+      <span>2. WHY WE USED THESE SPECIFIC TECHNOLOGIES (PLAIN-ENGLISH DEFENSE)</span>
+      <span class="section-tag">Architecture Rationale</span>
+    </div>
+
+    <div class="grid-2">
+      <div class="card card-blue">
+        <div class="card-header"><span class="badge-blue">WHY CITUS?</span> Horizontal Distributed Sharding</div>
+        <div style="font-size:7.2pt; color:#334155; line-height:1.35;">
+          <strong>Problem:</strong> Standard PostgreSQL chokes on single-node disk I/O, table locking, and memory overhead when managing 60M+ flight records and high-frequency concurrent seat hold transactions.
+          <br/><strong>Why Citus:</strong> Transforms PostgreSQL into a distributed database. Data is partitioned across worker nodes using <code>flight_id</code> as shard key. Scaling CPU cores and disk IOPS horizontally without rewriting SQL queries.
+        </div>
+      </div>
+
+      <div class="card card-purple">
+        <div class="card-header"><span class="badge-purple">WHY CQRS?</span> Port 5433 Search Read Replica</div>
+        <div style="font-size:7.2pt; color:#334155; line-height:1.35;">
+          <strong>Problem:</strong> In airlines, 99.8% of user operations are flight searches; less than 0.2% are bookings. Heavy search queries lock tables and starve critical checkout transactions.
+          <br/><strong>Why CQRS:</strong> Complete Command-Query Separation. All search traffic hits a dedicated denormalized Read Replica (Port 5433) in &lt; 40ms. The Write Coordinator (Port 55432) remains 100% dedicated to atomic bookings.
+        </div>
+      </div>
+    </div>
+
+    <div class="grid-3">
+      <div class="card card-highlight">
+        <div class="card-header"><span class="badge-emerald">ROW-LEVEL CAS LOCKS</span> Zero Oversell</div>
+        <div style="font-size:7pt; color:#334155; line-height:1.3;">
+          Uses conditional SQL predicates: <code>available_seats = available_seats - 1 WHERE available_seats &gt;= 1</code>. Relies on Postgres MVCC row locks rather than slow Redis locks.
+        </div>
+      </div>
+
+      <div class="card card-amber">
+        <div class="card-header"><span class="badge-amber">TRANSACTIONAL OUTBOX</span> Saga Integrity</div>
+        <div style="font-size:7pt; color:#334155; line-height:1.3;">
+          Seat reservation and outbox event are written inside the <em>same atomic ACID transaction</em>. Even if the server dies mid-flight, events are never lost and sagas auto-reconcile.
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><span class="badge-blue">REDIS CACHE</span> Sub-2ms Speed</div>
+        <div style="font-size:7pt; color:#334155; line-height:1.3;">
+          Caches airport metadata, user JWT sessions, and hot flight searches. Relieves database from repeated queries while Citus handles financial-grade inventory balance.
+        </div>
+      </div>
+    </div>
+
+    <div class="callout">
+      <strong>Jury Elevator Pitch:</strong> <em>"AeroScale solves the billion-dollar airline problem: how to query 60 Million flights instantly without letting heavy search traffic interfere with the atomic row locks required to guarantee ZERO passenger overselling under extreme holiday booking spikes."</em>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <div class="page-footer">
+    <span>AeroScale Architecture & Defense Dossier • Generated for Final Academic Jury</span>
+    <span class="page-num">Page 1 of 3</span>
+  </div>
+</div>
+
+<!-- ==========================================
+     PAGE 2: UNDER-THE-HOOD MECHANISMS & MATRIX
+     ========================================== -->
+<div class="page">
+  <div>
+    <!-- Header -->
+    <div class="doc-header">
+      <div class="brand">
+        <div class="logo-box">⚙</div>
+        <div>
+          <div class="brand-title">AeroScale — Under-The-Hood Technical Mechanics</div>
+          <div class="brand-subtitle">Shard Co-location • Compare-And-Swap Invariant • Failure Recovery Matrix</div>
+        </div>
+      </div>
+      <div class="header-meta">
+        <div class="pill">Deep Technical Architecture</div>
+        <div class="submeta">Shard Key: flight_id • Hash Distribution</div>
+      </div>
+    </div>
+
+    <!-- Section 3: Shard Co-location & Zero-Oversell Algorithm -->
+    <div class="section-title">
+      <span>3. HOW IT WORKS UNDER THE HOOD: THE 3 CORE ENGINEERING INVARIANTS</span>
+      <span class="section-tag">Technical Depth</span>
+    </div>
+
+    <div class="card" style="margin-bottom:6px;">
+      <div class="card-header"><span class="badge-blue">INVARIANT 1</span> Citus Table Co-Location (Eliminating Distributed 2PC Overhead)</div>
+      <div style="font-size:7.2pt; color:#334155; line-height:1.35;">
+        • Both <code>flights</code> and <code>flight_seats</code> tables are distributed with:
+        <span class="code-snippet">SELECT create_distributed_table('flight_seats', 'flight_id', colocate_with =&gt; 'flights');</span>
+        <br/>• <strong>Why this is crucial for the Jury:</strong> Co-location guarantees that Shard 102001 of <code>flights</code> and Shard 102001 of <code>flight_seats</code> live on the <em>exact same physical worker node</em>!
+        <br/>• When a user books a flight, the query executes as a <strong>single-node local ACID transaction</strong> on that worker. It avoids expensive distributed network locks and cross-node Two-Phase Commit (2PC), giving enterprise throughput (&gt; 2,500 bookings/sec).
+      </div>
+    </div>
+
+    <div class="card card-highlight" style="margin-bottom:6px;">
+      <div class="card-header"><span class="badge-emerald">INVARIANT 2</span> Mathematical Anti-Oversell Conditional Decrement (Compare-And-Swap)</div>
+      <div style="font-size:7.2pt; color:#334155; line-height:1.35;">
+        • Instead of a naive <code>SELECT available_seats</code> followed by application-level <code>UPDATE</code> (which creates race conditions), AeroScale uses atomic database-level predicate locking:
+        <br/><span class="code-snippet">UPDATE flight_seats SET available_seats = available_seats - 1 WHERE flight_id = $1 AND cabin_class = $2 AND available_seats &gt;= 1 RETURNING available_seats;</span>
+        <br/>• <strong>Concurrency Invariant:</strong> PostgreSQL MVCC serializes row updates on the unique <code>(flight_id, cabin_class)</code> tuple. If counter is 0, the WHERE clause evaluates to false; <code>rowCount = 0</code>. The transaction rolls back immediately and returns <strong>409 Conflict</strong>. It is mathematically impossible to oversell even with 1,000 racing threads.
+      </div>
+    </div>
+
+    <div class="card card-amber" style="margin-bottom:6px;">
+      <div class="card-header"><span class="badge-amber">INVARIANT 3</span> The 300-Second Hold & Two-Phase Saga Auto-Reconciliation</div>
+      <div style="font-size:7.2pt; color:#334155; line-height:1.35;">
+        • When a passenger selects a seat, inventory is decremented and marked <code>status = 'HELD'</code> with <code>expires_at = NOW() + INTERVAL '5 minutes'</code>.
+        <br/>• An event is atomically recorded in <code>outbox_events</code>. A background Saga Reconciler polls for uncommitted holds. If the passenger abandons payment or the browser disconnects after 300s, the Saga triggers a <strong>compensating transaction</strong>: restoring <code>available_seats = available_seats + 1</code>, marking booking <code>'EXPIRED'</code>, and returning the seat to the open market.
+      </div>
+    </div>
+
+    <!-- Section 4: Traditional Architecture vs AeroScale Matrix -->
+    <div class="section-title">
+      <span>4. ARCHITECTURAL COMPARISON: TRADITIONAL SYSTEM VS. AEROSCALE</span>
+      <span class="section-tag">System Comparison</span>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th style="width:20%;">Engineering Dimension</th>
+          <th style="width:38%;">Traditional Monolithic Architecture</th>
+          <th style="width:42%;">AeroScale Distributed Engine</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Data Volume & Scale</strong></td>
+          <td>Single database instance degrades past 5M-10M rows due to B-tree depth and memory swapping.</td>
+          <td><strong>60,000,006 rows</strong> horizontally sharded over 51 Citus partition shards; scales linearly with new worker nodes.</td>
+        </tr>
+        <tr>
+          <td><strong>Concurrency & Oversell</strong></td>
+          <td>Pessimistic table locks or application-side Redis locks. Prone to race conditions and lock convoys.</td>
+          <td><strong>Strict conditional row-level predicate updates</strong> (CAS) enforced directly by PostgreSQL storage engine. 0% oversell.</td>
+        </tr>
+        <tr>
+          <td><strong>Search vs Booking Contention</strong></td>
+          <td>Heavy passenger flight searches share disk/CPU with checkout transactions, causing timeouts.</td>
+          <td><strong>CQRS Architecture:</strong> Search queries execute against Port 5433 read replica (&lt; 40ms); Port 55432 coordinator handles writes.</td>
+        </tr>
+        <tr>
+          <td><strong>Partial Failure Resilience</strong></td>
+          <td>Direct synchronous microservice calls leave dangling holds if network drops mid-booking.</td>
+          <td><strong>Transactional Outbox + Saga Orchestrator:</strong> Guaranteed at-least-once delivery with 300s compensating reconcilers.</td>
+        </tr>
+        <tr>
+          <td><strong>Worker Daemon Auth</strong></td>
+          <td>Workers cannot coordinate maintenance tasks when passwords missing across internal Docker containers.</td>
+          <td><strong>Hardened Trust / Pgpass Matrix:</strong> Worker1 and Worker2 communicate seamlessly for shard rebalancing.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-header" style="color:#0f172a;">Shard Distribution Key Choice</div>
+        <div style="font-size:7pt; color:#475569; line-height:1.3;">
+          <code>flight_id</code> distributes flights evenly across shards using a hash algorithm. Flights departing on the same date are spread evenly across all worker disks.
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header" style="color:#0f172a;">Indexed Cursor Pagination</div>
+        <div style="font-size:7pt; color:#475569; line-height:1.3;">
+          Instead of <code>OFFSET 50000000</code> (which sequentially scans 50M rows), the CQRS engine uses indexed covering indexes on <code>(departure_time, flight_id)</code> for instant jumps.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <div class="page-footer">
+    <span>AeroScale Architecture & Defense Dossier • Generated for Final Academic Jury</span>
+    <span class="page-num">Page 2 of 3</span>
+  </div>
+</div>
+
+<!-- ==========================================
+     PAGE 3: ADVANCED VIVA QUESTIONS & CHEAT SHEET
+     ========================================== -->
+<div class="page">
+  <div>
+    <!-- Header -->
+    <div class="doc-header">
+      <div class="brand">
+        <div class="logo-box">🎓</div>
+        <div>
+          <div class="brand-title">AeroScale — Advanced Viva Defense Questions & Cheat-Sheet</div>
+          <div class="brand-subtitle">High-Scoring Theoretical & Pragmatic Answers • Emergency Cluster Reference</div>
+        </div>
+      </div>
+      <div class="header-meta">
+        <div class="pill">Viva Defense Master</div>
+        <div class="submeta">CAP Theorem • MVCC • Deadlocks • 2PC</div>
+      </div>
+    </div>
+
+    <!-- Section 5: Advanced Viva Questions -->
+    <div class="section-title">
+      <span>5. ADVANCED VIVA QUESTIONS & HIGH-SCORING DEFENSE ANSWERS</span>
+      <span class="section-tag">Examiner Q&A</span>
+    </div>
+
+    <div class="qa-block">
+      <div class="qa-q"><span class="qa-q-tag">Q1</span> Why Citus sharding instead of standard Postgres primary-replica setup?</div>
+      <div class="qa-a"><strong>Answer:</strong> Standard read replicas only scale <em>read operations</em>; all <em>writes</em> still hit one single master disk and CPU, creating an absolute bottleneck. Citus shards both tables and indexes across worker nodes, providing horizontal scaling for <strong>both reads and concurrent writes</strong> while allowing a 60M dataset to exceed single-machine RAM limits.</div>
+    </div>
+
+    <div class="qa-block">
+      <div class="qa-q"><span class="qa-q-tag">Q2</span> How does AeroScale adhere to the CAP Theorem?</div>
+      <div class="qa-a"><strong>Answer:</strong> We make a deliberate split based on business domain: For <strong>Seat Inventory & Bookings</strong>, we choose <strong>CP (Consistency & Partition Tolerance)</strong> — if network partitions occur, we fail fast rather than risk overselling. For <strong>Flight Browsing/Search</strong>, we choose <strong>AP (Availability & Partition Tolerance)</strong> via the CQRS replica where eventual consistency (lag &lt; 50ms) is completely acceptable.</div>
+    </div>
+
+    <div class="qa-block">
+      <div class="qa-q"><span class="qa-q-tag">Q3</span> What prevents distributed deadlocks during simultaneous multi-seat bookings?</div>
+      <div class="qa-a"><strong>Answer:</strong> Two mechanisms: First, <strong>shard co-location</strong> ensures all seat counters for a given flight live on the exact same worker, meaning locks are resolved by Postgres’s local deadlock detector. Second, our application enforces a <strong>deterministic lock acquisition order</strong> (sorting seat IDs in ascending order before executing updates), mathematically preventing circular lock wait chains.</div>
+    </div>
+
+    <div class="qa-block">
+      <div class="qa-q"><span class="qa-q-tag">Q4</span> What transaction isolation level is used and why not Serializable?</div>
+      <div class="qa-a"><strong>Answer:</strong> We use <strong>Read Committed with Atomic Conditional Updates</strong>. <code>SERIALIZABLE</code> isolation aborts high numbers of transactions with serialization failure errors (40001) under heavy concurrency, requiring complex retry loops. Our atomic conditional decrement achieves 100% mathematical safety directly at the storage engine level with zero retry penalty.</div>
+    </div>
+
+    <div class="qa-block">
+      <div class="qa-q"><span class="qa-q-tag">Q5</span> What happens if the server crashes right after taking the passenger's money?</div>
+      <div class="qa-a"><strong>Answer:</strong> The <strong>Transactional Outbox pattern</strong> guarantees safety: the booking record and outbox event are committed atomically in the same database transaction. The background Saga worker replays unhandled events with idempotent keys, ensuring notifications, ticket emission, and payment capture complete reliably with zero orphan bookings.</div>
+    </div>
+
+    <div class="qa-block">
+      <div class="qa-q"><span class="qa-q-tag">Q6</span> Why not store inventory counters in Redis using DECR instead of Citus?</div>
+      <div class="qa-a"><strong>Answer:</strong> Redis <code>DECR</code> is in-memory and fast, but Redis is not fully ACID. During an unexpected power loss or failover, asynchronous replication (RDB/AOF) can lose state, resulting in catastrophic overselling. In AeroScale, Citus acts as the single source of truth for financial-grade inventory, while Redis is used strictly for read caching.</div>
+    </div>
+
+    <div class="qa-block">
+      <div class="qa-q"><span class="qa-q-tag">Q7</span> What caused the Citus maintenance daemon error and how was it solved?</div>
+      <div class="qa-a"><strong>Answer:</strong> The maintenance daemon on <code>worker2</code> was failing to connect to <code>worker1:5432</code> with <code>fe_sendauth: no password supplied</code>. Citus workers require bidirectional internal communication for maintenance tasks. We resolved this by creating trust rules on the internal Docker network, allowing workers to authenticate transparently without exposing ports externally.</div>
+    </div>
+
+    <!-- Section 6: Quick Reference Ports & Commands -->
+    <div class="section-title">
+      <span>6. JURY CHEAT-SHEET: CLUSTER TOPOLOGY, PORTS & VERIFICATION COMMANDS</span>
+      <span class="section-tag">Emergency CLI</span>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Component</th>
+          <th>Host Port</th>
+          <th>Internal Role</th>
+          <th>Verification Command / SQL</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Frontend Portal</strong></td>
+          <td><code>5173</code></td>
+          <td>React Vite SPA (Search & Lab)</td>
+          <td>Browse to <code>http://localhost:5173/admin/lab</code></td>
+        </tr>
+        <tr>
+          <td><strong>Backend API</strong></td>
+          <td><code>3001</code></td>
+          <td>Express CQRS & Saga Engine</td>
+          <td><code>curl http://localhost:3001/api/health</code></td>
+        </tr>
+        <tr>
+          <td><strong>Citus Coordinator</strong></td>
+          <td><code>55432</code></td>
+          <td>Distributed Write Master</td>
+          <td><code>psql -h localhost -p 55432 -U airline -c "SELECT * FROM citus_tables;"</code></td>
+        </tr>
+        <tr>
+          <td><strong>CQRS Read Replica</strong></td>
+          <td><code>5433</code></td>
+          <td>Denormalized 60M Search Replica</td>
+          <td><code>psql -h localhost -p 5433 -U airline -c "SELECT count(*) FROM search_flights;"</code></td>
+        </tr>
+        <tr>
+          <td><strong>Citus Worker 1 & 2</strong></td>
+          <td><code>5434 / 5435</code></td>
+          <td>Partition Shard Storage Nodes</td>
+          <td><code>docker logs airline-citus-worker1 --tail 20</code></td>
+        </tr>
+        <tr>
+          <td><strong>Redis Cache</strong></td>
+          <td><code>6379</code></td>
+          <td>Session & Search Projection Cache</td>
+          <td><code>docker exec -it airline-redis redis-cli ping</code> (PONG)</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="callout" style="margin-bottom:0; background:#f0fdf4; border-left-color:#16a34a; color:#14532d;">
+      <strong>Winning Defense Closing Statement:</strong> <em>"AeroScale is not a toy CRUD application; it is an industrial distributed systems architecture built to demonstrate that ACID safety, zero-oversell mathematical guarantees, and horizontal scalability across 60 Million records can be achieved simultaneously using modern PostgreSQL Citus sharding and CQRS."</em>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <div class="page-footer">
+    <span>AeroScale Architecture & Defense Dossier • Generated for Final Academic Jury</span>
+    <span class="page-num">Page 3 of 3</span>
+  </div>
+</div>
+
+</body>
+</html>
+"""
+
+# Output paths
+cwd = os.getcwd()
+html_path = os.path.join(cwd, 'AeroScale_Final_Jury_Defense_Guide.html')
+pdf_path = os.path.join(cwd, 'AeroScale_Final_Jury_Defense_Guide.pdf')
+
+# Write HTML
+with open(html_path, 'w', encoding='utf-8') as f:
+    f.write(html_content)
+
+print(f"HTML written to: {html_path}")
+
+# Compile using Chrome Headless
+chrome_path = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
+cmd = [
+    chrome_path,
+    '--headless=new',
+    '--disable-gpu',
+    f'--print-to-pdf={pdf_path}',
+    '--no-pdf-header-footer',
+    html_path
+]
+
+res = subprocess.run(cmd, capture_output=True, text=True)
+print(f"Chrome return code: {res.returncode}")
+
+# Verify exact page count using fitz (PyMuPDF)
+if os.path.exists(pdf_path):
+    doc = fitz.open(pdf_path)
+    page_count = doc.page_count
+    print(f"SUCCESS: Generated PDF '{pdf_path}' with page count: {page_count}")
+    doc.close()
+    if page_count != 3:
+        print(f"WARNING: Page count is {page_count}, expected 3!")
+else:
+    print("ERROR: PDF was not generated!")

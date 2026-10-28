@@ -23,7 +23,9 @@ const modules = [
   require('./010-refresh-tokens'),
   require('./011-booking-confirmed-timestamp'),
   require('./012-regions'),
-  require('./013-two-factor-and-verification')
+  require('./013-two-factor-and-verification'),
+  require('./014-booking-passengers'),
+  require('./015-schema-integrity-and-counters')
 ];
 
 const migrations = modules

@@ -58,10 +58,10 @@ function verifyJwt(token, secret, expiredMessage, invalidMessage) {
 }
 
 /** Issues a short-lived access token carrying the caller's identity and role. */
-function signAccessToken({ userId, email, role }) {
+function signAccessToken({ userId, email, role, amr = ['pwd', 'otp'] }) {
   const jti = newUuid();
   return jwt.sign(
-    { sub: userId, email, role, jti, typ: ACCESS_TOKEN_TYPE },
+    { sub: userId, email, role, jti, typ: ACCESS_TOKEN_TYPE, amr },
     env.JWT_ACCESS_SECRET,
     { ...BASE_CLAIMS, expiresIn: env.JWT_ACCESS_TTL }
   );
@@ -90,6 +90,7 @@ function verifyAccessToken(token) {
     email: payload.email,
     role: payload.role,
     jti: payload.jti,
+    amr: payload.amr || null,
     expiresAt: new Date(payload.exp * 1000),
   };
 }

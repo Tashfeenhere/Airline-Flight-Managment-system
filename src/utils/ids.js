@@ -67,11 +67,62 @@ function safeEqual(a, b) {
   return crypto.timingSafeEqual(bufA, bufB);
 }
 
+/**
+ * Encodes a routable composite identifier containing:
+ * - bookingId (UUID)
+ * - flightId (UUID)
+ * - departureDate (YYYY-MM-DD)
+ * - cellId (e.g. 'us-east' or 'default')
+ *
+ * Encoded as URL-safe base64: `bk_<base64url>`
+ */
+function encodeCompositeId({ bookingId, flightId, departureDate, cellId = 'cell-1' }) {
+  if (!bookingId) return null;
+  const payload = JSON.stringify({ b: bookingId, f: flightId, d: departureDate, c: cellId });
+  return `bk_${Buffer.from(payload).toString('base64url')}`;
+}
+
+/**
+ * Decodes a routable composite identifier or falls back to raw UUID.
+ */
+function decodeCompositeId(compositeOrUuid) {
+  if (!compositeOrUuid || typeof compositeOrUuid !== 'string') return null;
+  const trimmed = compositeOrUuid.trim();
+  if (trimmed.startsWith('bk_')) {
+    try {
+      const json = Buffer.from(trimmed.slice(3), 'base64url').toString('utf8');
+      const parsed = JSON.parse(json);
+      return {
+        bookingId: parsed.b,
+        flightId: parsed.f,
+        departureDate: parsed.d,
+        cellId: parsed.c || 'cell-1',
+        isComposite: true
+      };
+    } catch {
+      return null;
+    }
+  }
+  if (isValidUuid(trimmed)) {
+    return {
+      bookingId: trimmed.toLowerCase(),
+      flightId: null,
+      departureDate: null,
+      cellId: null,
+      isComposite: false
+    };
+  }
+  return null;
+}
+
 module.exports = {
   newUuid,
   isValidUuid,
   toUuidOrNull,
   generateBookingReference,
   randomToken,
-  safeEqual
+  safeEqual,
+  encodeCompositeId,
+  decodeCompositeId
 };
+

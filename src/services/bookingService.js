@@ -36,7 +36,7 @@ const logger = require('../utils/logger');
 const metrics = require('../observability/metrics');
 const errors = require('../utils/errors');
 const { executeWithRetry } = require('../concurrency/transactionRetry');
-const { newUuid, generateBookingReference } = require('../utils/ids');
+const { newUuid, generateBookingReference, decodeCompositeId, encodeCompositeId } = require('../utils/ids');
 const {
   BOOKING_STATUS,
   PAYMENT_STATUS,
@@ -83,8 +83,15 @@ function flightSnapshot(flight) {
 /** The public shape of a booking. One definition, so the contract cannot drift. */
 function serializeBooking(booking, { flight = null, payment = null } = {}) {
   if (!booking) return null;
+  const routableId = encodeCompositeId({
+    bookingId: booking.bookingId,
+    flightId: booking.flightId,
+    departureDate: booking.departureDate,
+    cellId: env.NODE_ID || 'cell-1'
+  });
   return {
     bookingId: booking.bookingId,
+    routableId,
     bookingReference: booking.bookingReference,
     flightId: booking.flightId,
     departureDate: booking.departureDate,
@@ -968,7 +975,22 @@ async function compensate({ flightId, departureDate, bookingId, reason, flight =
  * before the release rather than assumed.
  */
 async function cancelBooking({ bookingId, userId, isAdmin = false, reason = 'USER_CANCELLED' }) {
-  const booking = await bookingRepository.findAnyById(pool.writePool, { bookingId });
+  const decoded = typeof bookingId === 'string' ? decodeCompositeId(bookingId) : null;
+  let booking = null;
+
+  if (decoded && decoded.isComposite && decoded.flightId && decoded.departureDate) {
+    booking = await bookingRepository.findById(pool.writePool, {
+      flightId: decoded.flightId,
+      departureDate: decoded.departureDate,
+      bookingId: decoded.bookingId
+    });
+  }
+
+  if (!booking) {
+    const rawId = decoded ? decoded.bookingId : bookingId;
+    booking = await bookingRepository.findAnyById(pool.writePool, { bookingId: rawId });
+  }
+
   if (!booking) {
     throw new errors.NotFoundError('Booking not found', { bookingId });
   }
@@ -1120,7 +1142,24 @@ async function translateConflict(err, { flightId, departureDate, idempotencyKey,
 }
 
 async function getBooking({ bookingId }) {
-  const booking = await bookingRepository.findAnyById(pool.writePool, { bookingId });
+  const decoded = typeof bookingId === 'string' ? decodeCompositeId(bookingId) : null;
+  let booking = null;
+
+  if (decoded && decoded.isComposite && decoded.flightId && decoded.departureDate) {
+    // Zero-fanout probe straight into the target shard and partition!
+    booking = await bookingRepository.findById(pool.writePool, {
+      flightId: decoded.flightId,
+      departureDate: decoded.departureDate,
+      bookingId: decoded.bookingId
+    });
+  }
+
+  // Fallback to primary UUID or cross-shard probe
+  if (!booking) {
+    const rawId = decoded ? decoded.bookingId : bookingId;
+    booking = await bookingRepository.findAnyById(pool.writePool, { bookingId: rawId });
+  }
+
   if (!booking) {
     throw new errors.NotFoundError('Booking not found', { bookingId });
   }
@@ -1131,7 +1170,7 @@ async function getBooking({ bookingId }) {
   const payment = await paymentRepository.findByBooking(pool.writePool, {
     flightId: booking.flightId,
     departureDate: booking.departureDate,
-    bookingId
+    bookingId: booking.bookingId
   });
   return serializeBooking(booking, { flight, payment });
 }

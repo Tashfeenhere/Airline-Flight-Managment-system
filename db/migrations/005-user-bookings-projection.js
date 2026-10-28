@@ -57,7 +57,9 @@ module.exports = {
     await client.query(`
       CREATE INDEX IF NOT EXISTS idx_user_bookings_recent
         ON user_bookings (user_id, booking_created_at DESC);
+    `);
 
+    await client.query(`
       CREATE INDEX IF NOT EXISTS idx_user_bookings_status
         ON user_bookings (user_id, status);
     `);

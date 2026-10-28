@@ -6,11 +6,13 @@ import { useAuthStore } from '../../stores/authStore';
 import Input from '../../components/ui/Input';
 import Button from '../../components/ui/Button';
 import Alert from '../../components/ui/Alert';
+import { useToast } from '../../components/ui/Toast';
 
 export default function SignInPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { setAuth } = useAuthStore();
+  const toast = useToast();
 
   const [email, setEmail] = useState('ada.lovelace@example.com');
   const [password, setPassword] = useState('S3cur3-Pa$$w0rd');
@@ -25,7 +27,11 @@ export default function SignInPage() {
   const [resending, setResending] = useState(false);
   const [resendMsg, setResendMsg] = useState(null);
 
-  const from = location.state?.from?.pathname || null;
+  const from = location.state?.from
+    ? (typeof location.state.from === 'string'
+        ? location.state.from
+        : ((location.state.from.pathname || '') + (location.state.from.search || '')))
+    : null;
 
   const completeAuth = (data) => {
     setAuth({
@@ -33,6 +39,8 @@ export default function SignInPage() {
       accessToken: data.accessToken,
       refreshToken: data.refreshToken,
     });
+
+    toast.success(`Signed in as ${data.user.fullName || data.user.email}`, 'Authentication Successful');
 
     if (from) {
       navigate(from, { replace: true });
@@ -69,9 +77,9 @@ export default function SignInPage() {
         }
       }
     } catch (err) {
-      setError(
-        err.error?.message || err.message || 'Invalid credentials or verification code.'
-      );
+      const msg = err.error?.message || err.message || 'Invalid credentials or verification code.';
+      setError(msg);
+      toast.error(msg, 'Authentication Failed');
     } finally {
       setLoading(false);
     }
@@ -85,10 +93,13 @@ export default function SignInPage() {
       const res = await authApi.resendCode({ tempToken, email, type: 'LOGIN_2FA' });
       if (res.success) {
         setResendMsg('A fresh verification code has been dispatched to your email.');
+        toast.info('A fresh verification code has been dispatched.', 'Code Sent');
         if (res.data?.devCode) setDevCode(res.data.devCode);
       }
     } catch (err) {
-      setError(err.error?.message || err.message || 'Failed to resend code.');
+      const msg = err.error?.message || err.message || 'Failed to resend code.';
+      setError(msg);
+      toast.error(msg, 'Error');
     } finally {
       setResending(false);
     }
@@ -97,13 +108,15 @@ export default function SignInPage() {
   const handleQuickPassenger = () => {
     setTwoFactorRequired(false);
     setEmail('ada.lovelace@example.com');
-    setPassword('S3cur3-Pa$$w0rd');
+    setPassword('password123');
+    toast.info('Loaded passenger demo account credentials', 'Demo Account');
   };
 
   const handleQuickAdmin = () => {
     setTwoFactorRequired(false);
-    setEmail('admin.operator@aeroscale.internal');
-    setPassword('Citus-Admin-2026!');
+    setEmail('admin@airline.internal');
+    setPassword('AdminPassword123!');
+    toast.info('Loaded verified Cluster Admin credentials (admin@airline.internal)', 'Admin Demo');
   };
 
   return (

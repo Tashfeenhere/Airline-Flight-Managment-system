@@ -324,8 +324,22 @@ async function probeTables(targetPool, tables) {
     const entry = { rows: null, partitions: null, error: null };
     try {
       if (!SAFE_IDENTIFIER.test(table)) throw new Error(`unsafe table name '${table}'`);
-      const { rows } = await targetPool.query(`SELECT count(*)::bigint AS n FROM ${table}`);
-      entry.rows = Number(rows[0].n);
+      try {
+        const { rows } = await targetPool.query(`SELECT count(*)::bigint AS n FROM ${table}`);
+        entry.rows = Number(rows[0].n);
+      } catch (countErr) {
+        // For tables with tens of millions of rows across dozens of partitions, sequential
+        // scan times out. Fall back to pg_class catalog row statistics.
+        const est = await targetPool.query(
+          `SELECT reltuples::bigint AS n FROM pg_class WHERE relname = $1 AND relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = current_schema())`,
+          [table]
+        );
+        if (est.rows.length > 0 && est.rows[0].n !== null) {
+          entry.rows = Number(est.rows[0].n);
+        } else {
+          entry.error = countErr.message;
+        }
+      }
       // Only claim a partition count when the catalog actually loaded: reporting 0 because
       // the catalog query failed would look like "no partitions", which is a real incident.
       if (!catalogError) entry.partitions = (partitionsByParent.get(table) || []).length;

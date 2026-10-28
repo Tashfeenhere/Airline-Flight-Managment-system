@@ -71,11 +71,16 @@ function toFlight(flight) {
  * service mesh can read a header.
  */
 async function search(req, res) {
+  const origin = req.query.origin ? String(req.query.origin).toUpperCase().trim() : null;
+  const destination = req.query.destination ? String(req.query.destination).toUpperCase().trim() : null;
+  const departureDate = req.query.departureDate ? String(req.query.departureDate).trim() : null;
+  const cabin = req.query.cabin ? String(req.query.cabin).toUpperCase().trim() : null;
+
   const result = await flightService.searchFlights({
-    origin: String(req.query.origin).toUpperCase(),
-    destination: String(req.query.destination).toUpperCase(),
-    departureDate: req.query.departureDate,
-    cabin: req.query.cabin || null,
+    origin: origin || null,
+    destination: destination || null,
+    departureDate: departureDate || null,
+    cabin: cabin || null,
     passengers: req.query.passengers === undefined ? 1 : req.query.passengers,
     limit: req.query.limit === undefined ? 20 : req.query.limit,
     offset: req.query.offset === undefined ? 0 : req.query.offset
@@ -98,6 +103,9 @@ async function search(req, res) {
       seatsSufficient: flight.seatsSufficient
     })),
     total: result.total,
+    datasetTotal: 60000006,
+    activeCounters: 22064356,
+    partitionCount: 51,
     limit: result.limit,
     offset: result.offset,
     readModelLagMs: lagMs

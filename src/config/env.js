@@ -5,7 +5,12 @@
  * frozen object. Secrets are never logged: `describe()` prints a redacted view that
  * is safe to emit at startup.
  */
-require('dotenv').config();
+if (process.env.NODE_ENV !== 'test') {
+  require('dotenv').config();
+} else {
+  // In test mode, allow .env for DB credentials if not explicitly set in process.env, but do not override test-specific settings
+  require('dotenv').config();
+}
 
 function readString(name, fallback = null) {
   const raw = process.env[name];
@@ -132,7 +137,7 @@ const env = Object.freeze({
   // (guest attribution) — keeps the original prototype contract usable.
   REQUIRE_AUTH_FOR_BOOKING: readBool('REQUIRE_AUTH_FOR_BOOKING', false),
   // Two-Factor Authentication & Gmail configuration
-  REQUIRE_2FA: readBool('REQUIRE_2FA', !isTest),
+  REQUIRE_2FA: isTest ? readBool('TEST_REQUIRE_2FA', false) : readBool('REQUIRE_2FA', true),
   GMAIL_USER: readString('GMAIL_USER', ''),
   GMAIL_APP_PASSWORD: readString('GMAIL_APP_PASSWORD', ''),
   // Well-known identity that owns bookings made without a bearer token.

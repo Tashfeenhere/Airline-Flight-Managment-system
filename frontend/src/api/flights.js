@@ -2,9 +2,15 @@ import apiClient from './client';
 import { MOCK_FLIGHTS, generateMockSeatMap } from './mockData';
 
 export const flightsApi = {
-  async searchFlights(params) {
+  async searchFlights(params = {}) {
+    const cleanParams = {};
+    for (const [key, val] of Object.entries(params)) {
+      if (val !== undefined && val !== null && val !== '') {
+        cleanParams[key] = val;
+      }
+    }
     try {
-      const res = await apiClient.get('/flights/search', { params });
+      const res = await apiClient.get('/flights/search', { params: cleanParams });
       return res.data;
     } catch (err) {
       if (err.response?.data) return Promise.reject(err.response.data);

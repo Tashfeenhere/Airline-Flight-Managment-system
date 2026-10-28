@@ -63,6 +63,7 @@ function normaliseInventory(row) {
     totalSeats: Number(row.total_seats),
     availableSeats: Number(row.available_seats),
     heldSeats: Number(row.held_seats),
+    soldSeats: row.sold_seats === undefined ? 0 : Number(row.sold_seats),
     version: Number(row.version),
     updatedAt: toIsoString(row.updated_at)
   };

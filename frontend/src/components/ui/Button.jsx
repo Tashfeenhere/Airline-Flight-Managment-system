@@ -42,31 +42,45 @@ export default function Button({
     primary: {
       backgroundColor: 'var(--accent-primary)',
       color: '#ffffff',
-      boxShadow: '0 2px 8px rgba(37, 99, 235, 0.35)',
+      boxShadow: '0 4px 14px rgba(99, 102, 241, 0.35)',
+      border: '1px solid rgba(255, 255, 255, 0.15)',
+      fontWeight: '600',
     },
     secondary: {
       backgroundColor: 'var(--bg-surface-elevated)',
       color: 'var(--text-primary)',
       border: '1px solid var(--border-color)',
+      fontWeight: '500',
     },
     outline: {
       backgroundColor: 'transparent',
       color: 'var(--text-primary)',
       border: '1px solid var(--border-color)',
+      fontWeight: '500',
     },
     ghost: {
       backgroundColor: 'transparent',
       color: 'var(--text-secondary)',
+      fontWeight: '500',
     },
     danger: {
       backgroundColor: 'var(--status-danger-bg)',
       color: 'var(--status-danger)',
       border: '1px solid var(--status-danger-border)',
+      fontWeight: '600',
     },
     success: {
       backgroundColor: 'var(--status-success-bg)',
       color: 'var(--status-success)',
       border: '1px solid var(--status-success-border)',
+      fontWeight: '600',
+    },
+    cyan: {
+      backgroundColor: 'rgba(0, 240, 255, 0.14)',
+      color: 'var(--accent-cyan)',
+      border: '1px solid rgba(0, 240, 255, 0.4)',
+      fontWeight: '600',
+      boxShadow: '0 0 16px rgba(0, 240, 255, 0.25)',
     },
   };
 

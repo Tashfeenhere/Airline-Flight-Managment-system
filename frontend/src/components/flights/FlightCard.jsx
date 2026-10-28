@@ -6,8 +6,9 @@ import Badge from '../ui/Badge';
 import Button from '../ui/Button';
 
 export default function FlightCard({ flight, requestedCabin = 'ECONOMY', passengers = 1 }) {
+  const effectiveCabin = requestedCabin || 'ECONOMY';
   const currentCabin =
-    flight.cabins?.find((c) => c.cabin === requestedCabin) || flight.cabins?.[0] || {};
+    flight.cabins?.find((c) => c.cabin === effectiveCabin) || flight.cabins?.[0] || {};
 
   const availableSeats = currentCabin.available ?? 0;
   const isSoldOut = availableSeats < passengers;
@@ -204,7 +205,7 @@ export default function FlightCard({ flight, requestedCabin = 'ECONOMY', passeng
         >
           <div style={{ textAlign: 'right' }}>
             <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-              {requestedCabin.replace('_', ' ')}
+              {(currentCabin.cabin || effectiveCabin).replace('_', ' ')}
             </span>
             <div
               style={{
@@ -224,7 +225,7 @@ export default function FlightCard({ flight, requestedCabin = 'ECONOMY', passeng
           </div>
 
           <Link
-            to={`/flights/${flight.flightId}?cabin=${requestedCabin}`}
+            to={`/flights/${flight.flightId}?cabin=${currentCabin.cabin || effectiveCabin}`}
             style={{ width: '100%', textDecoration: 'none' }}
           >
             <Button

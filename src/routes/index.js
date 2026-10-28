@@ -45,6 +45,103 @@ function buildRouter() {
     router.use(path, child);
   }
 
+  // Real-time Event Backbone Server-Sent Events (SSE) stream for Control Room UI
+  const { sseStreamHandler, getRecentEvents } = require('../services/eventStreamService');
+  const { TEST_REGISTRY, executeScenario, getLiveDockerContainers, stopDockerContainer, startDockerContainer } = require('../services/testRunnerService');
+  const path = require('path');
+  const fs = require('fs');
+  const { spawn } = require('child_process');
+
+  router.get('/api/stream', sseStreamHandler);
+  router.get('/api/stream/recent', (req, res) => res.json({ ok: true, events: getRecentEvents() }));
+  router.get('/api/lab/tests', (req, res) => res.json({ ok: true, tests: Object.values(TEST_REGISTRY) }));
+  
+
+  router.get('/api/lab/docker/containers', (req, res) => {
+    try {
+      const containers = getLiveDockerContainers();
+      res.json({ ok: true, containers });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  router.post('/api/lab/docker/stop', (req, res) => {
+    const containerName = req.body?.containerName || 'airline_worker2';
+    console.log(`\n================================================================================`);
+    console.log(`[DOCKER_CONTROL] >>> MANUAL STOP TRIGGERED ON CONTAINER [${containerName}] <<<`);
+    try {
+      const result = stopDockerContainer(containerName);
+      console.log(`[DOCKER_CONTROL] Container [${containerName}] marked STOPPED!`);
+      console.log(`================================================================================\n`);
+      res.json({ ok: true, status: 'STOPPED', containerName, message: `Container ${containerName} stopped successfully.` });
+    } catch (err) {
+      console.error(`[DOCKER_CONTROL] Error stopping container [${containerName}]:`, err.message);
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  router.post('/api/lab/docker/start', async (req, res) => {
+    const containerName = req.body?.containerName || 'airline_worker2';
+    console.log(`\n================================================================================`);
+    console.log(`[DOCKER_CONTROL] >>> MANUAL START TRIGGERED ON CONTAINER [${containerName}] <<<`);
+    try {
+      startDockerContainer(containerName);
+      console.log(`[DOCKER_CONTROL] Container [${containerName}] marked RUNNING!`);
+      
+      const projectionService = require('../services/projectionService');
+      const drainRes = await projectionService.runOnce({ limit: 50 }).catch(() => ({ projected: 0 }));
+      console.log(`[DOCKER_CONTROL] Drained ${drainRes.projected || 0} pending outbox events into search read replica.`);
+      console.log(`================================================================================\n`);
+      res.json({ ok: true, status: 'RUNNING', containerName, projected: drainRes.projected || 0, message: `Container ${containerName} restarted and projections drained.` });
+    } catch (err) {
+      console.error(`[DOCKER_CONTROL] Error starting container [${containerName}]:`, err.message);
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  router.post('/api/lab/launch-cmd', (req, res) => {
+    const testId = req.body?.testId || 'LOAD_TEST_BURST';
+    console.log(`\n[API_LAB] >>> RECEIVED CMD LAUNCH REQUEST FOR [${testId}] <<<`);
+    try {
+      const { exec } = require('child_process');
+      const projectRoot = path.resolve(__dirname, '../../');
+      
+      let cmdToRun;
+      if (testId === 'LOAD_TEST_BURST') {
+        cmdToRun = `start "AeroScale 1M Load Test Console" cmd.exe /c "call scripts\\run-load-test-cmd.bat ${testId}"`;
+      } else if (testId === 'AUDIT_INVARIANTS' || testId === 'audit') {
+        cmdToRun = `start "AeroScale System Audit Console" cmd.exe /c "call audit.bat"`;
+      } else {
+        cmdToRun = `start "AeroScale Live Test Console - [${testId}]" cmd.exe /c "call scripts\\run-test-cmd.bat ${testId}"`;
+      }
+
+      console.log(`[API_LAB] Spawning CMD window: ${cmdToRun} in ${projectRoot}`);
+      exec(cmdToRun, { cwd: projectRoot }, (err) => {
+        if (err) {
+          console.error(`[API_LAB] Error spawning CMD for [${testId}]:`, err.message);
+        }
+      });
+      
+      console.log(`[API_LAB] Successfully launched Windows CMD terminal for [${testId}]`);
+      res.json({ ok: true, message: `Spawned CMD console window for ${testId} successfully` });
+    } catch (err) {
+      console.error(`[API_LAB] Failed to launch CMD for [${testId}]:`, err.message);
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  router.post('/api/lab/run/:testId', async (req, res) => {
+    console.log(`\n[API_LAB] >>> RECEIVED TEST EXECUTION REQUEST: [${req.params.testId}] <<<`);
+    try {
+      const result = await executeScenario(req.params.testId);
+      res.json({ ok: true, result });
+    } catch (err) {
+      console.error(`[API_LAB] Error executing scenario [${req.params.testId}]:`, err.message);
+      res.status(400).json({ ok: false, error: err.message });
+    }
+  });
+
   // The document itself, and the browsable UI. Served from the same object the app
   // routes were written against, so what a client reads cannot drift from what the
   // handlers do without the diff being visible.

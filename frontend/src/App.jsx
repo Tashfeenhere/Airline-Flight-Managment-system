@@ -35,12 +35,16 @@ import AdminOutboxStatsPage from './pages/admin/AdminOutboxStatsPage';
 import AdminPartitionsPage from './pages/admin/AdminPartitionsPage';
 import AdminTopologyPage from './pages/admin/AdminTopologyPage';
 import AdminReprojectionPage from './pages/admin/AdminReprojectionPage';
+import ControlRoomTestLab from './pages/admin/ControlRoomTestLab';
+
+import { ToastProvider } from './components/ui/Toast';
 
 export default function App() {
   return (
     <BrowserRouter>
-      <PageWrapper>
-        <Routes>
+      <ToastProvider>
+        <PageWrapper>
+          <Routes>
           {/* Public Routes */}
           <Route path="/" element={<HomePage />} />
           <Route path="/flights/search" element={<SearchResultsPage />} />
@@ -167,11 +171,21 @@ export default function App() {
               </AdminRoute>
             }
           />
+          <Route
+            path="/admin/lab"
+            element={
+              <AdminRoute>
+                <ControlRoomTestLab />
+              </AdminRoute>
+            }
+          />
+          <Route path="/control-room" element={<ControlRoomTestLab />} />
 
           {/* Fallback 404 Route */}
           <Route path="*" element={<NotFoundPage />} />
         </Routes>
       </PageWrapper>
+      </ToastProvider>
     </BrowserRouter>
   );
 }

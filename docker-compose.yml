@@ -56,7 +56,7 @@ services:
       POSTGRES_PASSWORD: airline
       POSTGRES_DB: airline_inventory
     ports:
-      - "5432:5432"
+      - "${CITUS_HOST_PORT:-54320}:5432"
     volumes:
       - coordinator_data:/var/lib/postgresql/data
     healthcheck:
@@ -176,6 +176,9 @@ services:
       NODE_ENV: production
       NODE_ID: api-1
       PORT: "3000"
+      JWT_ACCESS_SECRET: "aeroscale_jwt_access_secret_distributed_inventory_2026_secure"
+      JWT_REFRESH_SECRET: "aeroscale_jwt_refresh_secret_distributed_inventory_2026_secure"
+      CORS_ORIGINS: "http://localhost:8080,http://localhost:5173,http://localhost:3000,http://localhost"
       # The API tier serves HTTP only. Running the workers here as well would make
       # "stop the workers" (the chaos test, a worker rollout) stop nothing, because the
       # API replica would keep projecting. They are a separate workload by design.
@@ -200,6 +203,18 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: airline_frontend
+    ports:
+      - "80:80"
+      - "${FRONTEND_PORT:-8080}:80"
+    depends_on:
+      - api
+    restart: unless-stopped
+
   # ---------------------------------------------------------------------------
   # Optional services. Start them with `--profile tools` / `--profile workers` /
   # `--profile observability`.
@@ -222,6 +237,7 @@ services:
       CITUS_COORDINATOR_URL: postgres://airline:airline@coordinator:5432/airline_inventory
       PGBOUNCER_URL: ""
       READMODEL_URL: postgres://airline:airline@readmodel:5432/airline_read
+      PG_STATEMENT_TIMEOUT_MS: 0
     depends_on:
       coordinator:
         condition: service_healthy
@@ -241,6 +257,9 @@ services:
     environment:
       NODE_ENV: production
       NODE_ID: workers
+      JWT_ACCESS_SECRET: "aeroscale_jwt_access_secret_distributed_inventory_2026_secure"
+      JWT_REFRESH_SECRET: "aeroscale_jwt_refresh_secret_distributed_inventory_2026_secure"
+      CORS_ORIGINS: "http://localhost:8080,http://localhost:5173,http://localhost:3000,http://localhost"
       # Prometheus scrapes this port. The gauges that matter for the outbox alerts live
       # in this process, not in the API.
       WORKER_METRICS_PORT: "9464"

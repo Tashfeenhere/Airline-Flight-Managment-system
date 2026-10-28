@@ -32,6 +32,7 @@
  * case is a 409, not a replay.
  */
 const crypto = require('crypto');
+const pool = require('../db/pool');
 const cache = require('../cache');
 const logger = require('../utils/logger');
 const { IdempotencyConflictError } = require('../utils/errors');
@@ -119,6 +120,31 @@ async function begin({ scope, key, requestHash, ttlSeconds = DEFAULT_TTL_SECONDS
     await sleep(POLL_INTERVAL_MS);
   }
 
+  // Fast-path / Redis timed out: Check durable PostgreSQL idempotency_records table
+  try {
+    const { rows } = await pool.query(
+      `SELECT request_fingerprint, status, response_body
+         FROM idempotency_records
+        WHERE scope = $1 AND idempotency_key = $2 AND expires_at > now()`,
+      [scope, key]
+    );
+    if (rows.length > 0) {
+      const dbRecord = rows[0];
+      if (dbRecord.request_fingerprint && dbRecord.request_fingerprint !== requestHash) {
+        throw new IdempotencyConflictError(
+          'This Idempotency-Key was already used with a different request body',
+          { key, scope }
+        );
+      }
+      if (dbRecord.status === 'COMPLETED') {
+        return { state: 'replay', response: dbRecord.response_body, claimKey, recordKey };
+      }
+    }
+  } catch (pgErr) {
+    if (pgErr instanceof IdempotencyConflictError) throw pgErr;
+    logger.warn('Failed querying postgres idempotency_records', { error: pgErr.message });
+  }
+
   // Still running after the wait window: the honest answer is "a duplicate of this
   // request is in flight, ask again", not a fabricated result.
   logger.warn('Idempotency key still in flight after wait window', { scope, key });
@@ -132,15 +158,37 @@ async function complete({ scope, key, requestHash, response, ttlSeconds = DEFAUL
     { state: 'COMPLETED', requestHash, response, completedAt: Date.now() },
     ttlSeconds
   );
+
+  // Durable write to PostgreSQL
+  try {
+    const expiresAt = new Date(Date.now() + ttlSeconds * 1000);
+    await pool.query(
+      `INSERT INTO idempotency_records (
+         idempotency_key, scope, request_fingerprint, status, response_status, response_body, expires_at, updated_at
+       ) VALUES ($1, $2, $3, 'COMPLETED', $4, $5, $6, now())
+       ON CONFLICT (scope, idempotency_key) DO UPDATE
+       SET status = 'COMPLETED', response_status = $4, response_body = $5, expires_at = $6, updated_at = now()`,
+      [key, scope, requestHash, response && response.statusCode ? response.statusCode : 200, JSON.stringify(response), expiresAt]
+    );
+  } catch (err) {
+    logger.warn('Failed writing to durable idempotency_records', { scope, key, error: err.message });
+  }
 }
 
 /**
  * Releases the claim after a failure, so the client's retry may try again instead of
  * being answered with a replay of a request that never succeeded.
  */
-async function release({ claimKey, recordKey, token }) {
+async function release({ claimKey, recordKey, token, scope = null, key = null }) {
   const released = await cache.delIfValue(claimKey, token);
   if (recordKey) await cache.del(recordKey);
+  if (scope && key) {
+    try {
+      await pool.query('DELETE FROM idempotency_records WHERE scope = $1 AND idempotency_key = $2', [scope, key]);
+    } catch (err) {
+      // ignore
+    }
+  }
   return released;
 }
 
